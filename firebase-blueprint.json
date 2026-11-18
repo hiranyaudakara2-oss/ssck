@@ -1,0 +1,499 @@
+{
+  "entities": {
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Global website configuration, hero copy, mission statements, statistics, and footer contact details.",
+      "type": "object",
+      "properties": {
+        "siteTitle": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "tagline": { "type": "string", "minLength": 2, "maxLength": 180 },
+        "heroTitle": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "heroSubtitle": { "type": "string", "minLength": 2, "maxLength": 500 },
+        "heroBannerUrl": { "type": "string", "maxLength": 1000 },
+        "logoUrl": { "type": "string", "maxLength": 1000 },
+        "aboutMission": { "type": "string", "minLength": 2, "maxLength": 2000 },
+        "aboutVision": { "type": "string", "minLength": 2, "maxLength": 2000 },
+        "footerAddress": { "type": "string", "maxLength": 300 },
+        "footerEmail": { "type": "string", "maxLength": 150 },
+        "footerPhone": { "type": "string", "maxLength": 60 },
+        "footerCopyright": { "type": "string", "maxLength": 200 },
+        "statsStudents": { "type": "number" },
+        "statsProjects": { "type": "number" },
+        "statsAwards": { "type": "number" },
+        "statsPassRate": { "type": "number" },
+        "statsVisitors": { "type": "number" },
+        "maintenanceMode": { "type": "boolean" },
+        "maintenanceAnnouncement": { "type": "string", "maxLength": 1000 },
+        "maintenanceExpectedTime": { "type": "string", "maxLength": 200 },
+        "socialLinks": {
+          "type": "object",
+          "properties": {
+            "facebook": { "type": "string", "maxLength": 500 },
+            "instagram": { "type": "string", "maxLength": 500 },
+            "youtube": { "type": "string", "maxLength": 500 },
+            "tiktok": { "type": "string", "maxLength": 500 },
+            "whatsapp": { "type": "string", "maxLength": 500 },
+            "linkedin": { "type": "string", "maxLength": 500 },
+            "github": { "type": "string", "maxLength": 500 },
+            "twitter": { "type": "string", "maxLength": 500 },
+            "website": { "type": "string", "maxLength": 500 }
+          }
+        },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["siteTitle", "tagline", "heroTitle", "heroSubtitle", "aboutMission", "aboutVision", "updatedAt", "updatedBy"]
+    },
+    "Subject": {
+      "title": "Subject",
+      "description": "Academic technology discipline offered by the Technology Section.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "minLength": 2, "maxLength": 20 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "shortDescription": { "type": "string", "minLength": 2, "maxLength": 300 },
+        "fullDescription": { "type": "string", "minLength": 2, "maxLength": 3000 },
+        "imageUrl": { "type": "string", "maxLength": 1000 },
+        "headTeacherName": { "type": "string", "maxLength": 120 },
+        "headTeacherTitle": { "type": "string", "maxLength": 120 },
+        "labFacilities": { "type": "string", "maxLength": 600 },
+        "curriculumHighlights": { "type": "array" },
+        "order": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "name", "shortDescription", "fullDescription", "order", "createdAt", "updatedAt"]
+    },
+    "Teacher": {
+      "title": "Teacher",
+      "description": "Faculty member in the Technology Section.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "role": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "department": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "qualifications": { "type": "string", "maxLength": 300 },
+        "bio": { "type": "string", "maxLength": 1200 },
+        "photoUrl": { "type": "string", "maxLength": 1000 },
+        "officeRoom": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "role", "department", "createdAt", "updatedAt"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Featured student scholar or leadership profile.",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "gradeLevel": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "stream": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "roleTitle": { "type": "string", "maxLength": 120 },
+        "achievementsSummary": { "type": "string", "maxLength": 800 },
+        "photoUrl": { "type": "string", "maxLength": 1000 },
+        "graduationYear": { "type": "string", "maxLength": 20 },
+        "featured": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fullName", "gradeLevel", "stream", "featured", "createdAt", "updatedAt"]
+    },
+    "Event": {
+      "title": "Event",
+      "description": "Scheduled workshop, competition, exhibition, or seminar.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "category": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "eventDate": { "type": "string", "minLength": 4, "maxLength": 60 },
+        "startTime": { "type": "string", "maxLength": 20 },
+        "timeLabel": { "type": "string", "maxLength": 60 },
+        "location": { "type": "string", "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "imageUrl": { "type": "string", "maxLength": 1000 },
+        "isUpcoming": { "type": "boolean" },
+        "registrationLink": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "category", "eventDate", "location", "isUpcoming", "createdAt", "updatedAt"]
+    },
+    "Achievement": {
+      "title": "Achievement",
+      "description": "Award, Olympiad medal, or institutional milestone.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "category": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "awardLevel": { "type": "string", "enum": ["International", "National", "Provincial", "School"] },
+        "tier": { "type": "string", "enum": ["Bronze", "Silver", "Gold", "Platinum"] },
+        "iconType": { "type": "string", "enum": ["trophy", "medal", "certificate", "award"] },
+        "year": { "type": "string", "minLength": 4, "maxLength": 12 },
+        "awardDate": { "type": "string", "maxLength": 40 },
+        "recipients": { "type": "string", "maxLength": 240 },
+        "description": { "type": "string", "maxLength": 1500 },
+        "imageUrl": { "type": "string", "maxLength": 1000 },
+        "featured": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "category", "awardLevel", "year", "featured", "createdAt", "updatedAt"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Official Technology Section notice, circular, or homepage popup message.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "summary": { "type": "string", "minLength": 2, "maxLength": 360 },
+        "body": { "type": "string", "maxLength": 3000 },
+        "imageUrl": { "type": "string", "maxLength": 1000 },
+        "priority": { "type": "string", "enum": ["urgent", "important", "general"] },
+        "publishDate": { "type": "string", "maxLength": 40 },
+        "pinnedToHome": { "type": "boolean" },
+        "showAsPopup": { "type": "boolean" },
+        "authorName": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "summary", "priority", "publishDate", "pinnedToHome", "createdAt", "updatedAt"]
+    },
+    "GalleryItem": {
+      "title": "GalleryItem",
+      "description": "Photo or video showcase item from labs, events, and student builds.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "category": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "mediaType": { "type": "string", "enum": ["image", "video"] },
+        "mediaUrl": { "type": "string", "minLength": 2, "maxLength": 1000 },
+        "description": { "type": "string", "maxLength": 600 },
+        "capturedDate": { "type": "string", "maxLength": 40 },
+        "driveUrl": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "category", "mediaType", "mediaUrl", "createdAt", "updatedAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Student engineering, software, or scientific innovation project.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "subjectCode": { "type": "string", "minLength": 2, "maxLength": 30 },
+        "studentTeam": { "type": "string", "minLength": 2, "maxLength": 240 },
+        "year": { "type": "string", "minLength": 4, "maxLength": 12 },
+        "summary": { "type": "string", "minLength": 2, "maxLength": 500 },
+        "technicalDetails": { "type": "string", "maxLength": 3000 },
+        "imageUrl": { "type": "string", "maxLength": 1000 },
+        "demoUrl": { "type": "string", "maxLength": 1000 },
+        "featured": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "subjectCode", "studentTeam", "year", "summary", "featured", "createdAt", "updatedAt"]
+    },
+    "DownloadResource": {
+      "title": "DownloadResource",
+      "description": "Downloadable syllabus, past paper, lab manual, or Google Drive resource.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "subjectCode": { "type": "string", "minLength": 2, "maxLength": 30 },
+        "resourceType": { "type": "string", "enum": ["Syllabus", "Past Paper", "Lab Manual", "Study Guide", "Dataset"] },
+        "fileFormat": { "type": "string", "enum": ["PDF", "Drive", "DOCX", "ZIP", "Link"] },
+        "fileSizeLabel": { "type": "string", "maxLength": 40 },
+        "fileUrl": { "type": "string", "minLength": 2, "maxLength": 1000 },
+        "description": { "type": "string", "maxLength": 600 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "subjectCode", "resourceType", "fileFormat", "fileUrl", "createdAt", "updatedAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Registered member account with role and activation state.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "email": { "type": "string", "minLength": 3, "maxLength": 180 },
+        "photoURL": { "type": "string", "maxLength": 1000 },
+        "role": { "type": "string", "enum": ["member", "student", "teacher", "admin"] },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "department": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "email", "role", "status", "createdAt", "updatedAt"]
+    },
+    "CommunityMemberProfile": {
+      "title": "CommunityMemberProfile",
+      "description": "Public non-PII community member directory record synchronized with user registrations and deletions.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "photoURL": { "type": "string", "maxLength": 1000 },
+        "role": { "type": "string", "enum": ["member", "student", "teacher", "admin"] },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "department": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "role", "status", "createdAt", "updatedAt"]
+    },
+    "CommunityDirectoryMember": {
+      "title": "CommunityDirectoryMember",
+      "description": "Official SSCK TECH community member or executive committee profile managed by administrators.",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "position": {
+          "type": "string",
+          "enum": [
+            "President",
+            "Vice President",
+            "Secretary",
+            "Assistant Secretary",
+            "Treasurer",
+            "Assistant Treasurer",
+            "Chief Organizer",
+            "Media Coordinator",
+            "Technical Coordinator",
+            "Committee Member",
+            "General Community Member"
+          ]
+        },
+        "year": { "type": "string", "minLength": 4, "maxLength": 12 },
+        "bio": { "type": "string", "minLength": 2, "maxLength": 1200 },
+        "photoUrl": { "type": "string", "maxLength": 1000 },
+        "secondaryPhotoUrl": { "type": "string", "maxLength": 1000 },
+        "memberCode": { "type": "string", "maxLength": 40 },
+        "isExecutive": { "type": "boolean" },
+        "order": { "type": "number" },
+        "socialLinks": {
+          "type": "object",
+          "properties": {
+            "linkedin": { "type": "string", "maxLength": 500 },
+            "github": { "type": "string", "maxLength": 500 },
+            "twitter": { "type": "string", "maxLength": 500 },
+            "instagram": { "type": "string", "maxLength": 500 },
+            "website": { "type": "string", "maxLength": 500 }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fullName", "position", "bio", "isExecutive", "order", "createdAt", "updatedAt"]
+    },
+    "CustomLink": {
+      "title": "CustomLink",
+      "description": "Admin-managed clickable link attached to designated website sections or interactive UI elements.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "url": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "description": { "type": "string", "maxLength": 300 },
+        "targetSection": { "type": "string", "enum": ["home-hero", "home-showcase", "subjects", "downloads", "community", "history", "contact", "footer"] },
+        "icon": { "type": "string", "maxLength": 40 },
+        "attachToElement": { "type": "string", "maxLength": 80 },
+        "order": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "url", "targetSection", "order", "isActive", "createdAt", "updatedAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Authoritative RBAC record granting administrator privileges.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 180 },
+        "assignedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "assignedBy", "createdAt"]
+    },
+    "AdminLog": {
+      "title": "AdminLog",
+      "description": "Immutable audit log of administrative actions.",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "targetCollection": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "targetTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "adminUid": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "adminName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["action", "targetCollection", "targetTitle", "adminUid", "adminName", "createdAt"]
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "Inquiry submitted through the Contact Us page by an authenticated user.",
+      "type": "object",
+      "properties": {
+        "senderUid": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "senderEmail": { "type": "string", "minLength": 3, "maxLength": 180 },
+        "subject": { "type": "string", "minLength": 2, "maxLength": 180 },
+        "message": { "type": "string", "minLength": 5, "maxLength": 3000 },
+        "status": { "type": "string", "enum": ["new", "reviewed", "resolved"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderUid", "senderName", "senderEmail", "subject", "message", "status", "createdAt", "updatedAt"]
+    },
+    "HistoryMilestone": {
+      "title": "HistoryMilestone",
+      "description": "Chronological milestone in the interactive Technology History timeline.",
+      "type": "object",
+      "properties": {
+        "year": { "type": "string", "minLength": 2, "maxLength": 40 },
+        "era": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "description": { "type": "string", "minLength": 5, "maxLength": 2500 },
+        "impactSummary": { "type": "string", "maxLength": 500 },
+        "imageUrl": { "type": "string", "maxLength": 1000 },
+        "order": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["year", "era", "title", "description", "order", "createdAt", "updatedAt"]
+    },
+    "CommunityPost": {
+      "title": "CommunityPost",
+      "description": "Student and faculty technology discussion post.",
+      "type": "object",
+      "properties": {
+        "authorUid": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "authorRole": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "authorPhotoUrl": { "type": "string", "maxLength": 1000 },
+        "category": { "type": "string", "enum": ["Engineering", "ICT & AI", "Bio-Systems", "Agri & Geo", "Robotics", "General Tech"] },
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "content": { "type": "string", "minLength": 5, "maxLength": 3000 },
+        "imageUrl": { "type": "string", "maxLength": 1000 },
+        "pinned": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorUid", "authorName", "authorRole", "category", "title", "content", "pinned", "createdAt", "updatedAt"]
+    },
+    "CommunityLike": {
+      "title": "CommunityLike",
+      "description": "Single per-user like record on a community post.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "createdAt"]
+    },
+    "CommunityComment": {
+      "title": "CommunityComment",
+      "description": "Comment reply on a community post.",
+      "type": "object",
+      "properties": {
+        "authorUid": { "type": "string", "minLength": 2, "maxLength": 128 },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "authorRole": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "authorPhotoUrl": { "type": "string", "maxLength": 1000 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 1200 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorUid", "authorName", "authorRole", "body", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/siteSettings/{settingId}": {
+      "schema": { "$ref": "#/entities/SiteSettings" },
+      "description": "Publicly readable website configuration managed by administrators."
+    },
+    "/subjects/{subjectId}": {
+      "schema": { "$ref": "#/entities/Subject" },
+      "description": "Academic technology subjects offered by the school."
+    },
+    "/teachers/{teacherId}": {
+      "schema": { "$ref": "#/entities/Teacher" },
+      "description": "Technology Section faculty profiles."
+    },
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Featured Technology Section student profiles."
+    },
+    "/events/{eventId}": {
+      "schema": { "$ref": "#/entities/Event" },
+      "description": "Upcoming and past school technology events."
+    },
+    "/achievements/{achievementId}": {
+      "schema": { "$ref": "#/entities/Achievement" },
+      "description": "Technology Section awards and achievements."
+    },
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Official notices and announcements."
+    },
+    "/gallery/{mediaId}": {
+      "schema": { "$ref": "#/entities/GalleryItem" },
+      "description": "Media gallery photos and videos."
+    },
+    "/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/Project" },
+      "description": "Student engineering and research projects."
+    },
+    "/downloads/{resourceId}": {
+      "schema": { "$ref": "#/entities/DownloadResource" },
+      "description": "Downloadable curriculum documents, PDFs, and Google Drive links."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Registered user accounts with PII isolated to owner and admin."
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Authoritative administrator role lookup collection."
+    },
+    "/adminLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AdminLog" },
+      "description": "Audit trail of recent administrative operations."
+    },
+    "/contactMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/ContactMessage" },
+      "description": "Contact inquiries submitted by verified users."
+    },
+    "/historyEvents/{milestoneId}": {
+      "schema": { "$ref": "#/entities/HistoryMilestone" },
+      "description": "Technology History timeline milestones curated by administrators."
+    },
+    "/communityPosts/{postId}": {
+      "schema": { "$ref": "#/entities/CommunityPost" },
+      "description": "Community knowledge-sharing posts created by verified users."
+    },
+    "/communityPosts/{postId}/likes/{userId}": {
+      "schema": { "$ref": "#/entities/CommunityLike" },
+      "description": "Subcollection of user likes for a community post."
+    },
+    "/communityPosts/{postId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/CommunityComment" },
+      "description": "Subcollection of comments for a community post."
+    },
+    "/communityMembers/{userId}": {
+      "schema": { "$ref": "#/entities/CommunityMemberProfile" },
+      "description": "Publicly readable non-PII community member profiles for live member counts."
+    },
+    "/communityDirectory/{memberId}": {
+      "schema": { "$ref": "#/entities/CommunityDirectoryMember" },
+      "description": "Official SSCK TECH Community Members and Executive Committee profiles managed by administrators."
+    },
+    "/customLinks/{linkId}": {
+      "schema": { "$ref": "#/entities/CustomLink" },
+      "description": "Administrator-managed interactive links placed in designated site sections."
+    }
+  }
+}

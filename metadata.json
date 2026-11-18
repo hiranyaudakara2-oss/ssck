@@ -1,0 +1,8 @@
+{
+  "name": "Remix SSCK TECH",
+  "description": "International school Technology Section digital platform featuring SFT, Engineering Technology, ICT, Bio Systems Technology, Agriculture, and Geography programs, student innovations, and administrative management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
