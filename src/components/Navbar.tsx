@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import {
+  BookOpen,
   Calendar,
   Clock,
   Cpu,
@@ -36,13 +37,14 @@ export interface NavItemConfig {
 export const NAV_ITEMS: NavItemConfig[] = [
   { number: 1, route: 'home', label: 'Home', icon: Home },
   { number: 2, route: 'history', label: 'History', icon: Clock },
-  { number: 3, route: 'teachers-members', label: 'Teacher & Member', icon: Users },
-  { number: 4, route: 'events', label: 'Event', icon: Calendar },
-  { number: 5, route: 'projects', label: 'Project', icon: Cpu },
-  { number: 6, route: 'achievements', label: 'Achievements', icon: Trophy },
-  { number: 7, route: 'gallery', label: 'Gallery', icon: ImageIcon },
-  { number: 8, route: 'about', label: 'About us', icon: Info },
-  { number: 9, route: 'admin', label: 'Admin portal', icon: ShieldCheck },
+  { number: 3, route: 'subjects', label: 'Subjects', icon: BookOpen },
+  { number: 4, route: 'teachers-members', label: 'Teacher & Member', icon: Users },
+  { number: 5, route: 'events', label: 'Event', icon: Calendar },
+  { number: 6, route: 'projects', label: 'Project', icon: Cpu },
+  { number: 7, route: 'achievements', label: 'Achievements', icon: Trophy },
+  { number: 8, route: 'gallery', label: 'Gallery', icon: ImageIcon },
+  { number: 9, route: 'about', label: 'About us', icon: Info },
+  { number: 10, route: 'admin', label: 'Admin portal', icon: ShieldCheck },
 ];
 
 export function Navbar({ currentRoute, onNavigate, onPrefetch, hidden = false }: NavbarProps) {
@@ -101,6 +103,7 @@ export function Navbar({ currentRoute, onNavigate, onPrefetch, hidden = false }:
   const isRouteActive = (route: PageRoute): boolean => {
     if (route === 'home') return currentRoute === 'home';
     if (route === 'history') return currentRoute === 'history';
+    if (route === 'subjects') return currentRoute === 'subjects';
     if (route === 'teachers-members') {
       return ['teachers-members', 'teachers', 'students', 'community-members'].includes(currentRoute);
     }
@@ -113,10 +116,10 @@ export function Navbar({ currentRoute, onNavigate, onPrefetch, hidden = false }:
     return route === currentRoute;
   };
 
-  // Nav links for desktop center zone (Items 1 to 8)
-  const desktopLinks = NAV_ITEMS.slice(0, 8);
-  // Item 9 is the Admin portal
-  const adminItem = NAV_ITEMS[8];
+  // Nav links for desktop center zone (Items 1 to 9)
+  const desktopLinks = NAV_ITEMS.slice(0, 9);
+  // Item 10 is the Admin portal
+  const adminItem = NAV_ITEMS[9];
   const isAdminActive = isRouteActive('admin');
 
   return (
