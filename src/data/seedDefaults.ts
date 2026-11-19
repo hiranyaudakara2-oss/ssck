@@ -418,6 +418,7 @@ export const DEFAULT_ANNOUNCEMENTS: Omit<Announcement, 'createdAt' | 'updatedAt'
     priority: 'urgent',
     publishDate: '2026-11-14',
     pinnedToHome: true,
+    showAsPopup: true,
     authorName: 'Dr. Kavinda Wijesekera',
   },
   {

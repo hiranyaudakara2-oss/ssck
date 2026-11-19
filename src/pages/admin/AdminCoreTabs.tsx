@@ -1111,6 +1111,7 @@ export function AnnouncementsTab() {
       priority: 'important',
       publishDate: new Date().toISOString().slice(0, 10),
       pinnedToHome: true,
+      showAsPopup: false,
       authorName: 'Technology Office',
     });
   };
@@ -1138,6 +1139,7 @@ export function AnnouncementsTab() {
         priority: editing.priority || 'general',
         publishDate: editing.publishDate || new Date().toISOString().slice(0, 10),
         pinnedToHome: Boolean(editing.pinnedToHome),
+        showAsPopup: Boolean(editing.showAsPopup),
         authorName: editing.authorName || 'Technology Office',
       });
       setEditing(null);
@@ -1239,15 +1241,26 @@ export function AnnouncementsTab() {
                 className="mt-1 w-full rounded-lg border border-white/15 bg-[#091022] px-3 py-2 text-sm text-white"
               />
             </div>
-            <label className="flex items-center gap-2 pt-6 text-xs font-medium text-slate-200">
-              <input
-                type="checkbox"
-                checked={Boolean(editing.pinnedToHome)}
-                onChange={(e) => setEditing({ ...editing, pinnedToHome: e.target.checked })}
-                className="h-4 w-4 rounded border-white/20"
-              />
-              <span>Pin to Homepage</span>
-            </label>
+            <div className="flex flex-col gap-2 pt-4">
+              <label className="flex items-center gap-2 text-xs font-medium text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={Boolean(editing.pinnedToHome)}
+                  onChange={(e) => setEditing({ ...editing, pinnedToHome: e.target.checked })}
+                  className="h-4 w-4 rounded border-white/20"
+                />
+                <span>Pin to Homepage</span>
+              </label>
+              <label className="flex items-center gap-2 text-xs font-medium text-blue-300">
+                <input
+                  type="checkbox"
+                  checked={Boolean(editing.showAsPopup)}
+                  onChange={(e) => setEditing({ ...editing, showAsPopup: e.target.checked })}
+                  className="h-4 w-4 rounded border-white/20 accent-blue-600"
+                />
+                <span>Show as Site Popup on Load</span>
+              </label>
+            </div>
           </div>
 
           <div>

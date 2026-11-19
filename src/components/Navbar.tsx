@@ -17,6 +17,7 @@ import { useData } from '../context/DataContext';
 import { DEFAULT_WEB_LOGO } from '../data/seedDefaults';
 import type { PageRoute } from '../types';
 import { normalizeMediaUrl } from '../utils/validation';
+import { AnnouncementNotificationDropdown } from './AnnouncementNotificationDropdown';
 
 interface NavbarProps {
   currentRoute: PageRoute;
@@ -196,8 +197,10 @@ export function Navbar({ currentRoute, onNavigate, onPrefetch, hidden = false }:
           })}
         </nav>
 
-        {/* Zone 3: Item 9 (Admin portal - Desktop/Laptop Only) & Mobile Hamburger Trigger */}
+        {/* Zone 3: Notifications, Item 9 (Admin portal) & Mobile Hamburger Trigger */}
         <div className="flex items-center gap-2.5 shrink-0">
+          <AnnouncementNotificationDropdown onNavigate={onNavigate} />
+
           <button
             type="button"
             onClick={() => handleLinkClick(adminItem.route)}
