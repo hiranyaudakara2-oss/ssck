@@ -162,7 +162,7 @@ export function AchievementDetailModal({
                           : 'border-white/20 opacity-65 hover:opacity-100'
                       }`}
                     >
-                      <img src={img} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
+                      <SafeImage src={img} alt={achievement.title} className="h-full w-full object-cover" />
                     </motion.button>
                   ))}
                 </div>

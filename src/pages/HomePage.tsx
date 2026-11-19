@@ -150,12 +150,16 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
   }, [events]);
 
   const pinnedAnnouncements = useMemo(() => {
-    return announcements
+    return [...announcements]
       .filter((item) => {
         const matchesCat = annCategoryFilter === 'all' || item.priority === annCategoryFilter;
         const itemYear = item.publishDate?.match(/\b(20\d{2})\b/)?.[1] || '';
         const matchesYear = annYearFilter === 'all' || itemYear === annYearFilter;
         return matchesCat && matchesYear;
+      })
+      .sort((a, b) => {
+        if (a.pinnedToHome !== b.pinnedToHome) return a.pinnedToHome ? -1 : 1;
+        return (b.publishDate || '').localeCompare(a.publishDate || '');
       })
       .slice(0, 3);
   }, [announcements, annCategoryFilter, annYearFilter]);

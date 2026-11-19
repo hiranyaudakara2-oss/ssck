@@ -55,3 +55,16 @@ export function isValidExternalUrl(url: string): boolean {
     return false;
   }
 }
+
+export function normalizeMediaUrl(url?: string | null): string {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('/src/assets/images/')) {
+    return trimmed.replace(/^\/src\/assets\/images\//, '/assets/images/');
+  }
+  if (/^http:\/\/(i\.)?ibb\.co\//i.test(trimmed)) {
+    return trimmed.replace(/^http:\/\/(i\.)?ibb\.co\//i, 'https://$1ibb.co/');
+  }
+  return trimmed;
+}

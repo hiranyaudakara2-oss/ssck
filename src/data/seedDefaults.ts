@@ -14,17 +14,17 @@ import type {
   Teacher,
 } from '../types';
 
-export const HERO_CAMPUS_IMAGE = '/src/assets/images/hero_tech_campus_1794797924159.jpg';
-export const SCIENCE_BIO_IMAGE = '/src/assets/images/subject_science_bio_1794797924343.jpg';
-export const ENGINEERING_LAB_IMAGE = '/src/assets/images/subject_engineering_lab_1794797925806.jpg';
-export const ICT_STUDIO_IMAGE = '/src/assets/images/subject_ict_studio_1794797925814.jpg';
-export const AGRI_GEO_IMAGE = '/src/assets/images/subject_agri_geo_1794797926606.jpg';
+export const HERO_CAMPUS_IMAGE = '/assets/images/hero_tech_campus_1794797924159.jpg';
+export const SCIENCE_BIO_IMAGE = '/assets/images/subject_science_bio_1794797924343.jpg';
+export const ENGINEERING_LAB_IMAGE = '/assets/images/subject_engineering_lab_1794797925806.jpg';
+export const ICT_STUDIO_IMAGE = '/assets/images/subject_ict_studio_1794797925814.jpg';
+export const AGRI_GEO_IMAGE = '/assets/images/subject_agri_geo_1794797926606.jpg';
 
-export const HISTORY_PRINTING_PRESS_IMAGE = '/src/assets/images/history_printing_press_1794800137386.jpg';
-export const HISTORY_TELEPHONE_IMAGE = '/src/assets/images/history_early_telephone_1794800137732.jpg';
-export const HISTORY_FIRST_COMPUTER_IMAGE = '/src/assets/images/history_first_computer_1794800138677.jpg';
-export const HISTORY_INTERNET_MOBILE_IMAGE = '/src/assets/images/history_internet_mobile_1794800139026.jpg';
-export const HISTORY_AI_ROBOTICS_IMAGE = '/src/assets/images/history_ai_robotics_1794800139907.jpg';
+export const HISTORY_PRINTING_PRESS_IMAGE = '/assets/images/history_printing_press_1794800137386.jpg';
+export const HISTORY_TELEPHONE_IMAGE = '/assets/images/history_early_telephone_1794800137732.jpg';
+export const HISTORY_FIRST_COMPUTER_IMAGE = '/assets/images/history_first_computer_1794800138677.jpg';
+export const HISTORY_INTERNET_MOBILE_IMAGE = '/assets/images/history_internet_mobile_1794800139026.jpg';
+export const HISTORY_AI_ROBOTICS_IMAGE = '/assets/images/history_ai_robotics_1794800139907.jpg';
 
 export const DEFAULT_WEB_LOGO =
   '/assets/aistudio/20250218_125255_0000__2_-removebg-preview_f1038a4a.png';
@@ -418,7 +418,6 @@ export const DEFAULT_ANNOUNCEMENTS: Omit<Announcement, 'createdAt' | 'updatedAt'
     priority: 'urgent',
     publishDate: '2026-11-14',
     pinnedToHome: true,
-    showAsPopup: true,
     authorName: 'Dr. Kavinda Wijesekera',
   },
   {
@@ -431,7 +430,6 @@ export const DEFAULT_ANNOUNCEMENTS: Omit<Announcement, 'createdAt' | 'updatedAt'
     priority: 'important',
     publishDate: '2026-11-10',
     pinnedToHome: true,
-    showAsPopup: false,
     authorName: 'Technology Academic Board',
   },
   {
@@ -444,7 +442,6 @@ export const DEFAULT_ANNOUNCEMENTS: Omit<Announcement, 'createdAt' | 'updatedAt'
     priority: 'general',
     publishDate: '2026-11-05',
     pinnedToHome: false,
-    showAsPopup: false,
     authorName: 'Workshop Operations',
   },
 ];

@@ -1,11 +1,32 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
+import {
+  doc,
+  getDocFromServer,
+  getFirestore,
+  initializeFirestore,
+  type Firestore,
+  type FirestoreSettings,
+} from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+function createFirestoreInstance(): Firestore {
+  try {
+    const settings = {
+      experimentalForceLongPolling: true,
+      experimentalLongPollingOptions: { timeoutSeconds: 25 },
+      useFetchStreams: false,
+      ignoreUndefinedProperties: true,
+    } as FirestoreSettings;
+    return initializeFirestore(app, settings, firebaseConfig.firestoreDatabaseId);
+  } catch {
+    return getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  }
+}
+
+export const db = createFirestoreInstance();
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
@@ -87,48 +108,17 @@ export function handleFirestoreError(
   throw new Error(JSON.stringify(errInfo));
 }
 
-let inFlightReachabilityCheck: Promise<boolean> | null = null;
-
-/**
- * Probes Cloud Firestore server reachability before opening persistent WatchStreams
- * so offline/throttled environments do not stall for 10s on Listen streams.
- */
-export async function verifyFirestoreOnline(timeoutMs = 5000): Promise<boolean> {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    return false;
-  }
-  if (inFlightReachabilityCheck) {
-    return inFlightReachabilityCheck;
-  }
-
-  inFlightReachabilityCheck = (async () => {
-    let timer = 0;
-    try {
-      const probe = getDocFromServer(doc(db, 'siteSettings', 'main')).then(() => true);
-      const timeout = new Promise<boolean>((resolve) => {
-        timer = window.setTimeout(() => resolve(false), timeoutMs);
-      });
-      return await Promise.race([probe, timeout]);
-    } catch (error) {
-      if (isOfflineFirestoreError(error)) {
-        return false;
-      }
-      // Backend responded (e.g. permission error), so connectivity is healthy
-      return true;
-    } finally {
-      if (timer) window.clearTimeout(timer);
-      inFlightReachabilityCheck = null;
-    }
-  })();
-
-  return inFlightReachabilityCheck;
-}
-
-async function testConnection() {
+async function testConnection(retryCount = 0): Promise<void> {
   try {
-    await verifyFirestoreOnline(6000);
+    await getDocFromServer(doc(db, 'siteSettings', 'main'));
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
+      if (retryCount < 1 && typeof window !== 'undefined') {
+        window.setTimeout(() => {
+          void testConnection(retryCount + 1);
+        }, 2500);
+        return;
+      }
       console.error('Please check your Firebase configuration.');
     }
   }

@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHmac, scryptSync, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,7 +17,10 @@ const ADMIN_PASSWORD_HASH =
   process.env.ADMIN_PASSWORD_HASH?.trim() ||
   'ce37a93cf3466fe0ad3e97cee13facecbd5ad3abb166c4f6b1b1cd57b54f751311036495bd6cb67dc60d7419122c3718cfd19ec978d773eded7e0183d815a1c8';
 const ADMIN_SESSION_SECRET =
-  process.env.ADMIN_SESSION_SECRET?.trim() || randomBytes(32).toString('hex');
+  process.env.ADMIN_SESSION_SECRET?.trim() ||
+  createHmac('sha256', ADMIN_PASSWORD_SALT)
+    .update(`${ADMIN_EMAIL}:${ADMIN_PASSWORD_HASH}:techsphere-session`)
+    .digest('hex');
 
 const ADMIN_SESSION_COOKIE = 'techsphere_admin_session';
 const ADMIN_SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
@@ -256,23 +259,27 @@ async function createApp() {
         return;
       }
 
-      const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
+      const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '').trim();
       if (!cleanBase64 || cleanBase64.length > 14_000_000) {
         res.status(400).json({ error: 'Image must be a valid base64 image under 10 MB.' });
         return;
       }
 
-      const form = new URLSearchParams();
-      form.set('key', apiKey);
-      form.set('image', cleanBase64);
+      const form = new FormData();
+      form.append('key', apiKey);
+      form.append('image', cleanBase64);
       if (name && typeof name === 'string') {
-        form.set('name', name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 80));
+        form.append('name', name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 80));
       }
 
       const upstream = await fetch('https://api.imgbb.com/1/upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: form.toString(),
+        headers: {
+          Accept: 'application/json',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        },
+        body: form,
       });
 
       const payload = (await upstream.json().catch(() => null)) as {
@@ -281,12 +288,17 @@ async function createApp() {
           url?: string;
           display_url?: string;
           delete_url?: string;
+          image?: { url?: string };
           thumb?: { url?: string };
         };
         error?: { message?: string; code?: number };
       } | null;
 
-      if (!upstream.ok || !payload?.success || !payload?.data?.url) {
+      const rawResolvedUrl =
+        payload?.data?.display_url || payload?.data?.image?.url || payload?.data?.url || '';
+      const resolvedUrl = rawResolvedUrl.replace(/^http:\/\/(i\.)?ibb\.co\//i, 'https://$1ibb.co/');
+
+      if (!upstream.ok || !payload?.success || !resolvedUrl) {
         const rawMsg =
           payload?.error?.message || `ImgBB upload failed with HTTP ${upstream.status}.`;
         const message =
@@ -298,9 +310,9 @@ async function createApp() {
       }
 
       res.json({
-        url: payload.data.display_url || payload.data.url,
-        thumbUrl: payload.data.thumb?.url || '',
-        deleteUrl: payload.data.delete_url || '',
+        url: resolvedUrl,
+        thumbUrl: payload.data?.thumb?.url || '',
+        deleteUrl: payload.data?.delete_url || '',
       });
     } catch (err) {
       console.error('ImgBB proxy error:', err);

@@ -19,6 +19,9 @@ import {
   setDoc,
   updateDoc,
   writeBatch,
+  type DocumentData,
+  type DocumentSnapshot,
+  type QuerySnapshot,
 } from 'firebase/firestore';
 import {
   auth,
@@ -28,7 +31,6 @@ import {
   isBootstrappedAdminEmail,
   isOfflineFirestoreError,
   OperationType,
-  verifyFirestoreOnline,
 } from '../firebase';
 import {
   DEFAULT_ACHIEVEMENTS,
@@ -68,21 +70,52 @@ import type {
   Teacher,
   UserProfile,
 } from '../types';
-import { clampNumber, clampString, clampStringList, createUniqueId, preserveDocId, sanitizeDocId } from '../utils/validation';
+import {
+  clampNumber,
+  clampString,
+  clampStringList,
+  createUniqueId,
+  normalizeMediaUrl,
+  preserveDocId,
+  sanitizeDocId,
+} from '../utils/validation';
+
+function makeTombstoneId(collectionName: string, id: string): string {
+  return preserveDocId(`${collectionName}__${id}`);
+}
+
+const DEFAULT_TOMBSTONE_IDS = new Set<string>([
+  ...DEFAULT_SUBJECTS.map((i) => makeTombstoneId('subjects', i.id)),
+  ...DEFAULT_TEACHERS.map((i) => makeTombstoneId('teachers', i.id)),
+  ...DEFAULT_STUDENTS.map((i) => makeTombstoneId('students', i.id)),
+  ...DEFAULT_EVENTS.map((i) => makeTombstoneId('events', i.id)),
+  ...DEFAULT_ACHIEVEMENTS.map((i) => makeTombstoneId('achievements', i.id)),
+  ...DEFAULT_ANNOUNCEMENTS.map((i) => makeTombstoneId('announcements', i.id)),
+  ...DEFAULT_GALLERY.map((i) => makeTombstoneId('gallery', i.id)),
+  ...DEFAULT_PROJECTS.map((i) => makeTombstoneId('projects', i.id)),
+  ...DEFAULT_DOWNLOADS.map((i) => makeTombstoneId('downloads', i.id)),
+  ...DEFAULT_HISTORY_EVENTS.map((i) => makeTombstoneId('historyEvents', i.id)),
+  ...DEFAULT_COMMUNITY_DIRECTORY.map((i) => makeTombstoneId('communityDirectory', i.id)),
+]);
 
 function mergeCollectionWithDefaults<T extends { id: string }>(
   defaults: T[],
   firestoreDocs: T[],
-  deletedIds: string[]
+  deletedTombstoneIds: string[],
+  collectionName: string
 ): T[] {
+  const deletedSet = new Set(deletedTombstoneIds);
   const map = new Map<string, T>();
   defaults.forEach((item) => {
-    map.set(item.id, item);
+    const key = makeTombstoneId(collectionName, item.id);
+    if (!deletedSet.has(key) && !deletedSet.has(item.id)) {
+      map.set(item.id, item);
+    }
   });
-  firestoreDocs.forEach((doc) => {
-    map.set(doc.id, doc);
+  firestoreDocs.forEach((docItem) => {
+    map.set(docItem.id, docItem);
   });
-  return Array.from(map.values()).filter((item) => !deletedIds.includes(item.id));
+  return Array.from(map.values());
 }
 
 interface DataContextValue {
@@ -105,7 +138,6 @@ interface DataContextValue {
   events: CampusEvent[];
   achievements: Achievement[];
   announcements: Announcement[];
-  activePopupAnnouncement: Announcement | null;
   gallery: GalleryItem[];
   projects: StudentProject[];
   downloads: DownloadResource[];
@@ -230,13 +262,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [usersDocs, setUsersDocs] = useState<UserProfile[]>([]);
   const [adminLogsDocs, setAdminLogsDocs] = useState<AdminLog[]>([]);
   const [contactDocs, setContactDocs] = useState<ContactMessage[]>([]);
-  const [loadingData, setLoadingData] = useState(true);
+  const [siteSettingsSynced, setSiteSettingsSynced] = useState(false);
+  const [deletedDefaultsSynced, setDeletedDefaultsSynced] = useState(false);
+  const [communityDirectorySynced, setCommunityDirectorySynced] = useState(false);
   const [eventsSynced, setEventsSynced] = useState(false);
   const [announcementsSynced, setAnnouncementsSynced] = useState(false);
+  const [initialLoadTimedOut, setInitialLoadTimedOut] = useState(false);
   const [firestoreServerSynced, setFirestoreServerSynced] = useState(false);
   const [seedingInProgress, setSeedingInProgress] = useState(false);
   const [openModalIds, setOpenModalIds] = useState<string[]>([]);
   const autoSeedAttemptedRef = React.useRef(false);
+
+  const loadingData =
+    !(siteSettingsSynced && deletedDefaultsSynced && communityDirectorySynced) &&
+    !initialLoadTimedOut;
 
   const registerModal = useCallback((id: string, isOpen: boolean) => {
     setOpenModalIds((prev) => {
@@ -250,44 +289,36 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const hasOpenModal = openModalIds.length > 0;
   const activeModalId = openModalIds[0] ?? null;
 
-  const [localDeletedIds, setLocalDeletedIds] = useState<string[]>(() => {
-    try {
-      const stored =
-        window.localStorage.getItem('techsphere_deleted_default_ids') ||
-        window.sessionStorage.getItem('techsphere_deleted_default_ids');
-      return stored ? (JSON.parse(stored) as string[]) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [deletedDefaultKeys, setDeletedDefaultKeys] = useState<string[]>([]);
 
-  const markItemDeleted = useCallback((id: string) => {
-    setLocalDeletedIds((prev) => {
-      if (prev.includes(id)) return prev;
-      const next = [...prev, id];
-      try {
-        window.localStorage.setItem('techsphere_deleted_default_ids', JSON.stringify(next));
-        window.sessionStorage.setItem('techsphere_deleted_default_ids', JSON.stringify(next));
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-  }, []);
+  const markDefaultDeleted = useCallback(
+    async (collectionName: string, id: string, deletedByUid: string) => {
+      const tombstoneId = makeTombstoneId(collectionName, id);
+      if (!DEFAULT_TOMBSTONE_IDS.has(tombstoneId)) return;
+      await setDoc(doc(db, 'deletedDefaults', tombstoneId), {
+        itemId: id.slice(0, 128),
+        collectionName: collectionName.slice(0, 60),
+        deletedBy: deletedByUid,
+        deletedAt: serverTimestamp(),
+      });
+    },
+    []
+  );
 
-  const unmarkItemDeleted = useCallback((id: string) => {
-    setLocalDeletedIds((prev) => {
-      if (!prev.includes(id)) return prev;
-      const next = prev.filter((item) => item !== id);
+  const unmarkDefaultDeleted = useCallback(
+    async (collectionName: string, id: string) => {
+      const tombstoneId = makeTombstoneId(collectionName, id);
+      if (!deletedDefaultKeys.includes(tombstoneId)) return;
       try {
-        window.localStorage.setItem('techsphere_deleted_default_ids', JSON.stringify(next));
-        window.sessionStorage.setItem('techsphere_deleted_default_ids', JSON.stringify(next));
-      } catch {
-        // ignore
+        await deleteDoc(doc(db, 'deletedDefaults', tombstoneId));
+      } catch (err) {
+        if (!isOfflineFirestoreError(err)) {
+          console.warn('Could not clear default tombstone:', err);
+        }
       }
-      return next;
-    });
-  }, []);
+    },
+    [deletedDefaultKeys]
+  );
 
   const isAdmin = useMemo(() => {
     if (!user || !user.emailVerified) return false;
@@ -426,9 +457,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return () => unsub();
   }, []);
 
-  // Subscribe to current user's profile doc after initial Firestore server sync is established
+  // Subscribe to current user's profile doc in real time
   useEffect(() => {
-    if (!user || !firestoreServerSynced) return;
+    if (!user) return;
     const path = `users/${user.uid}`;
     const unsub = onSnapshot(
       doc(db, 'users', user.uid),
@@ -440,275 +471,309 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       (error) => handleListenerError(error, OperationType.GET, path)
     );
     return () => unsub();
-  }, [user, firestoreServerSynced, handleListenerError]);
+  }, [user, handleListenerError]);
 
-  // Public Firestore listeners (verify server reachability before attaching WatchStreams)
+  // Public real-time Firestore listeners (completely independent of admin authentication)
+  // Uses resilient retry-on-transient-error + online/focus wakeups so unauthenticated visitors never miss updates
   useEffect(() => {
-    let active = true;
-    let primaryAttached = false;
-    let secondaryAttached = false;
-    let secondaryPhaseTwoTimer = 0;
-    let reconnectTimer = 0;
-    const unsubs: (() => void)[] = [];
+    let unmounted = false;
+    const cleanups: (() => void)[] = [];
+    const retryTriggers: (() => void)[] = [];
 
-    const attachSecondaryListeners = () => {
-      if (!active || secondaryAttached) return;
-      secondaryAttached = true;
+    const fallbackTimer = window.setTimeout(() => {
+      if (!unmounted) {
+        setInitialLoadTimedOut(true);
+      }
+    }, 10_000);
 
-      // Wave 1: Primary campus content collections
-      unsubs.push(
-        onSnapshot(
-          query(collection(db, 'subjects'), orderBy('order', 'asc')),
+    function attachResilientListener<T>(
+      path: string,
+      createSub: (onNext: (snap: T) => void, onError: (error: unknown) => void) => () => void,
+      onData: (snap: T) => void,
+      onSettled?: () => void
+    ) {
+      let currentUnsub: (() => void) | null = null;
+      let retryTimer: number | null = null;
+      let attempt = 0;
+      let degraded = false;
+
+      const subscribeNow = () => {
+        if (unmounted) return;
+        if (retryTimer !== null) {
+          window.clearTimeout(retryTimer);
+          retryTimer = null;
+        }
+        currentUnsub?.();
+        currentUnsub = createSub(
           (snap) => {
-            setSubjectsDocs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Subject, 'id'>) })));
-          },
-          (error) => handleListenerError(error, OperationType.LIST, 'subjects')
-        )
-      );
-
-      unsubs.push(
-        onSnapshot(
-          collection(db, 'teachers'),
-          (snap) => {
-            setTeachersDocs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Teacher, 'id'>) })));
-          },
-          (error) => handleListenerError(error, OperationType.LIST, 'teachers')
-        )
-      );
-
-      unsubs.push(
-        onSnapshot(
-          collection(db, 'students'),
-          (snap) => {
-            setStudentsDocs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Student, 'id'>) })));
-          },
-          (error) => handleListenerError(error, OperationType.LIST, 'students')
-        )
-      );
-
-      unsubs.push(
-        onSnapshot(
-          query(collection(db, 'events'), orderBy('eventDate', 'desc')),
-          (snap) => {
-            setEventsDocs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CampusEvent, 'id'>) })));
-            setEventsSynced(true);
+            attempt = 0;
+            degraded = false;
+            onData(snap);
+            onSettled?.();
           },
           (error) => {
-            setEventsSynced(true);
-            handleListenerError(error, OperationType.LIST, 'events');
-          }
-        )
-      );
+            onSettled?.();
+            const code =
+              error && typeof error === 'object' && 'code' in error
+                ? String((error as { code?: unknown }).code || '')
+                : '';
+            const isTransient =
+              isOfflineFirestoreError(error) ||
+              code === 'unavailable' ||
+              code === 'deadline-exceeded' ||
+              code === 'internal' ||
+              code === 'unknown' ||
+              code === 'cancelled' ||
+              code === 'aborted';
 
-      unsubs.push(
-        onSnapshot(
-          query(collection(db, 'achievements'), orderBy('year', 'desc')),
-          (snap) => {
-            setAchievementsDocs(
-              snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Achievement, 'id'>) }))
-            );
-          },
-          (error) => handleListenerError(error, OperationType.LIST, 'achievements')
-        )
-      );
-
-      unsubs.push(
-        onSnapshot(
-          query(collection(db, 'announcements'), orderBy('publishDate', 'desc')),
-          (snap) => {
-            setAnnouncementsDocs(
-              snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Announcement, 'id'>) }))
-            );
-            setAnnouncementsSynced(true);
-          },
-          (error) => {
-            setAnnouncementsSynced(true);
-            handleListenerError(error, OperationType.LIST, 'announcements');
-          }
-        )
-      );
-
-      unsubs.push(
-        onSnapshot(
-          query(collection(db, 'projects'), orderBy('year', 'desc')),
-          (snap) => {
-            setProjectsDocs(
-              snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<StudentProject, 'id'>) }))
-            );
-          },
-          (error) => handleListenerError(error, OperationType.LIST, 'projects')
-        )
-      );
-
-      // Wave 2: Secondary showcase, archive, and community collections
-      secondaryPhaseTwoTimer = window.setTimeout(() => {
-        if (!active) return;
-
-        unsubs.push(
-          onSnapshot(
-            collection(db, 'gallery'),
-            (snap) => {
-              setGalleryDocs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<GalleryItem, 'id'>) })));
-            },
-            (error) => handleListenerError(error, OperationType.LIST, 'gallery')
-          )
-        );
-
-        unsubs.push(
-          onSnapshot(
-            collection(db, 'downloads'),
-            (snap) => {
-              setDownloadsDocs(
-                snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<DownloadResource, 'id'>) }))
-              );
-            },
-            (error) => handleListenerError(error, OperationType.LIST, 'downloads')
-          )
-        );
-
-        unsubs.push(
-          onSnapshot(
-            query(collection(db, 'historyEvents'), orderBy('order', 'asc')),
-            (snap) => {
-              setHistoryEventsDocs(
-                snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<HistoryMilestone, 'id'>) }))
-              );
-            },
-            (error) => handleListenerError(error, OperationType.LIST, 'historyEvents')
-          )
-        );
-
-        unsubs.push(
-          onSnapshot(
-            query(collection(db, 'communityPosts'), orderBy('createdAt', 'desc')),
-            (snap) => {
-              setCommunityPostsDocs(
-                snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CommunityPost, 'id'>) }))
-              );
-            },
-            (error) => handleListenerError(error, OperationType.LIST, 'communityPosts')
-          )
-        );
-
-        unsubs.push(
-          onSnapshot(
-            collection(db, 'communityMembers'),
-            (snap) => {
-              setCommunityMembersDocs(
-                snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CommunityMember, 'id'>) }))
-              );
-            },
-            (error) => handleListenerError(error, OperationType.LIST, 'communityMembers')
-          )
-        );
-
-        unsubs.push(
-          onSnapshot(
-            query(collection(db, 'communityDirectory'), orderBy('order', 'asc')),
-            (snap) => {
-              setCommunityDirectoryDocs(
-                snap.docs.map((d) => ({
-                  id: d.id,
-                  ...(d.data() as Omit<CommunityDirectoryMember, 'id'>),
-                }))
-              );
-            },
-            (error) => handleListenerError(error, OperationType.LIST, 'communityDirectory')
-          )
-        );
-
-        unsubs.push(
-          onSnapshot(
-            query(collection(db, 'customLinks'), orderBy('order', 'asc')),
-            (snap) => {
-              setCustomLinksDocs(
-                snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CustomLink, 'id'>) }))
-              );
-            },
-            (error) => handleListenerError(error, OperationType.LIST, 'customLinks')
-          )
-        );
-      }, 120);
-    };
-
-    const startPrimaryStream = () => {
-      if (!active || primaryAttached) return;
-      primaryAttached = true;
-
-      unsubs.push(
-        onSnapshot(
-          doc(db, 'siteSettings', 'main'),
-          (snap) => {
-            if (snap.exists()) {
-              setSiteSettingsDoc({ id: snap.id, ...(snap.data() as SiteSettings) });
-            } else {
-              setSiteSettingsDoc(null);
-            }
-            if (!snap.metadata.fromCache) {
-              setFirestoreServerSynced(true);
-              attachSecondaryListeners();
-            }
-            setLoadingData(false);
-          },
-          (error) => {
-            if (isOfflineFirestoreError(error)) {
-              setFirestoreServerSynced(false);
-              setLoadingData(false);
+            if (isTransient) {
+              degraded = true;
+              const delayMs = Math.min(20_000, 1500 * Math.pow(2, attempt));
+              attempt = Math.min(attempt + 1, 5);
+              if (!unmounted && retryTimer === null) {
+                retryTimer = window.setTimeout(() => {
+                  retryTimer = null;
+                  subscribeNow();
+                }, delayMs);
+              }
               return;
             }
-            handleFirestoreError(error, OperationType.GET, 'siteSettings/main');
+            handleListenerError(error, OperationType.LIST, path);
           }
-        )
-      );
+        );
+      };
+
+      subscribeNow();
+      retryTriggers.push(() => {
+        if (degraded && !unmounted) {
+          attempt = 0;
+          subscribeNow();
+        }
+      });
+      cleanups.push(() => {
+        if (retryTimer !== null) {
+          window.clearTimeout(retryTimer);
+          retryTimer = null;
+        }
+        currentUnsub?.();
+        currentUnsub = null;
+      });
+    }
+
+    attachResilientListener<DocumentSnapshot<DocumentData>>(
+      'siteSettings/main',
+      (onNext, onError) =>
+        onSnapshot(
+          doc(db, 'siteSettings', 'main'),
+          { includeMetadataChanges: true },
+          onNext,
+          onError
+        ),
+      (snap) => {
+        if (snap.exists()) {
+          setSiteSettingsDoc({ id: snap.id, ...(snap.data() as SiteSettings) });
+        } else {
+          setSiteSettingsDoc(null);
+        }
+        if (!snap.metadata.fromCache) {
+          setFirestoreServerSynced(true);
+        }
+      },
+      () => setSiteSettingsSynced(true)
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'deletedDefaults',
+      (onNext, onError) => onSnapshot(collection(db, 'deletedDefaults'), onNext, onError),
+      (snap) => {
+        setDeletedDefaultKeys(snap.docs.map((d) => d.id));
+      },
+      () => setDeletedDefaultsSynced(true)
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'subjects',
+      (onNext, onError) =>
+        onSnapshot(query(collection(db, 'subjects'), orderBy('order', 'asc')), onNext, onError),
+      (snap) => {
+        setSubjectsDocs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Subject, 'id'>) })));
+      }
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'teachers',
+      (onNext, onError) => onSnapshot(collection(db, 'teachers'), onNext, onError),
+      (snap) => {
+        setTeachersDocs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Teacher, 'id'>) })));
+      }
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'students',
+      (onNext, onError) => onSnapshot(collection(db, 'students'), onNext, onError),
+      (snap) => {
+        setStudentsDocs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Student, 'id'>) })));
+      }
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'events',
+      (onNext, onError) =>
+        onSnapshot(query(collection(db, 'events'), orderBy('eventDate', 'desc')), onNext, onError),
+      (snap) => {
+        setEventsDocs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CampusEvent, 'id'>) })));
+      },
+      () => setEventsSynced(true)
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'achievements',
+      (onNext, onError) =>
+        onSnapshot(query(collection(db, 'achievements'), orderBy('year', 'desc')), onNext, onError),
+      (snap) => {
+        setAchievementsDocs(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Achievement, 'id'>) }))
+        );
+      }
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'announcements',
+      (onNext, onError) =>
+        onSnapshot(
+          query(collection(db, 'announcements'), orderBy('publishDate', 'desc')),
+          onNext,
+          onError
+        ),
+      (snap) => {
+        setAnnouncementsDocs(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Announcement, 'id'>) }))
+        );
+      },
+      () => setAnnouncementsSynced(true)
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'projects',
+      (onNext, onError) =>
+        onSnapshot(query(collection(db, 'projects'), orderBy('year', 'desc')), onNext, onError),
+      (snap) => {
+        setProjectsDocs(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<StudentProject, 'id'>) }))
+        );
+      }
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'gallery',
+      (onNext, onError) => onSnapshot(collection(db, 'gallery'), onNext, onError),
+      (snap) => {
+        setGalleryDocs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<GalleryItem, 'id'>) })));
+      }
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'downloads',
+      (onNext, onError) => onSnapshot(collection(db, 'downloads'), onNext, onError),
+      (snap) => {
+        setDownloadsDocs(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<DownloadResource, 'id'>) }))
+        );
+      }
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'historyEvents',
+      (onNext, onError) =>
+        onSnapshot(query(collection(db, 'historyEvents'), orderBy('order', 'asc')), onNext, onError),
+      (snap) => {
+        setHistoryEventsDocs(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<HistoryMilestone, 'id'>) }))
+        );
+      }
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'communityPosts',
+      (onNext, onError) =>
+        onSnapshot(
+          query(collection(db, 'communityPosts'), orderBy('createdAt', 'desc')),
+          onNext,
+          onError
+        ),
+      (snap) => {
+        setCommunityPostsDocs(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CommunityPost, 'id'>) }))
+        );
+      }
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'communityMembers',
+      (onNext, onError) => onSnapshot(collection(db, 'communityMembers'), onNext, onError),
+      (snap) => {
+        setCommunityMembersDocs(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CommunityMember, 'id'>) }))
+        );
+      }
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'communityDirectory',
+      (onNext, onError) =>
+        onSnapshot(
+          query(collection(db, 'communityDirectory'), orderBy('order', 'asc')),
+          onNext,
+          onError
+        ),
+      (snap) => {
+        setCommunityDirectoryDocs(
+          snap.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<CommunityDirectoryMember, 'id'>),
+          }))
+        );
+      },
+      () => setCommunityDirectorySynced(true)
+    );
+
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'customLinks',
+      (onNext, onError) =>
+        onSnapshot(query(collection(db, 'customLinks'), orderBy('order', 'asc')), onNext, onError),
+      (snap) => {
+        setCustomLinksDocs(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CustomLink, 'id'>) }))
+        );
+      }
+    );
+
+    const handleReconnect = () => {
+      retryTriggers.forEach((trigger) => trigger());
     };
-
-    const initFirestoreStreams = async () => {
-      const reachable = await verifyFirestoreOnline(6000);
-      if (!active) return;
-
-      if (reachable) {
-        startPrimaryStream();
-      } else {
-        setLoadingData(false);
-        setEventsSynced(true);
-        setAnnouncementsSynced(true);
-        window.clearTimeout(reconnectTimer);
-        reconnectTimer = window.setTimeout(() => {
-          if (active && !primaryAttached) {
-            void initFirestoreStreams();
-          }
-        }, 20000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        handleReconnect();
       }
     };
-
-    const handleOnline = () => {
-      if (!primaryAttached) {
-        void initFirestoreStreams();
-      } else {
-        attachSecondaryListeners();
-      }
-    };
-    window.addEventListener('online', handleOnline);
-
-    void initFirestoreStreams();
+    window.addEventListener('online', handleReconnect);
+    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
-      active = false;
-      window.clearTimeout(secondaryPhaseTwoTimer);
-      window.clearTimeout(reconnectTimer);
-      window.removeEventListener('online', handleOnline);
-      unsubs.forEach((u) => u());
+      unmounted = true;
+      window.clearTimeout(fallbackTimer);
+      window.removeEventListener('online', handleReconnect);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      cleanups.forEach((u) => u());
     };
   }, [handleListenerError]);
 
-  // Admin-only listeners (wait until initial public WatchStream is synced with server)
+  // Admin-only listeners
   useEffect(() => {
-    if (!authReady || !isAdmin || !firestoreServerSynced) {
-      if (!authReady || !isAdmin) {
-        setUsersDocs([]);
-        setAdminLogsDocs([]);
-        setContactDocs([]);
-      }
+    if (!authReady || !isAdmin) {
+      setUsersDocs([]);
+      setAdminLogsDocs([]);
+      setContactDocs([]);
       return;
     }
 
@@ -743,7 +808,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       unsubLogs();
       unsubContacts();
     };
-  }, [authReady, isAdmin, firestoreServerSynced, loadingData, handleListenerError]);
+  }, [authReady, isAdmin, handleListenerError]);
 
   // Backfill public communityMembers directory from legacy /users when admin is online
   useEffect(() => {
@@ -846,7 +911,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         if (snap.empty) {
           await commitChunk(entry.name, (batch) => {
             entry.items.forEach(({ id, ...rest }) => {
-              unmarkItemDeleted(id);
+              const tombstoneId = makeTombstoneId(entry.name, id);
+              if (deletedDefaultKeys.includes(tombstoneId)) {
+                batch.delete(doc(db, 'deletedDefaults', tombstoneId));
+              }
               batch.set(doc(db, entry.name, id), { ...rest, createdAt: now, updatedAt: now });
             });
             return entry.items.length;
@@ -867,7 +935,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setSeedingInProgress(false);
     }
-  }, [user, isAdmin, seedingInProgress, logAdminAction, unmarkItemDeleted]);
+  }, [user, isAdmin, seedingInProgress, logAdminAction, deletedDefaultKeys]);
 
   // Auto-seed once when verified admin opens site, server responded, and database is completely empty
   useEffect(() => {
@@ -912,11 +980,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         code === 'auth/cancelled-popup-request' ||
         code === 'auth/user-cancelled'
       ) {
-        // User closed or dismissed the popup intentionally; do not log an error or rethrow
         return false;
       }
-      console.warn('Google sign-in notice:', err);
-      return false;
+      if (code === 'auth/unauthorized-domain') {
+        const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+        throw new Error(
+          `Domain "${host}" is not authorized in Firebase Authentication. Add "${host}" under Firebase Console -> Authentication -> Settings -> Authorized domains.`
+        );
+      }
+      if (code === 'auth/popup-blocked') {
+        throw new Error(
+          'Browser blocked the Google sign-in popup. Allow popups for this site and try again.'
+        );
+      }
+      throw new Error(
+        err instanceof Error ? err.message : 'Google authentication failed. Please try again.'
+      );
     }
   }, []);
 
@@ -998,8 +1077,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           tagline: clampString(data.tagline, 180, DEFAULT_SITE_SETTINGS.tagline),
           heroTitle: clampString(data.heroTitle, 160, DEFAULT_SITE_SETTINGS.heroTitle),
           heroSubtitle: clampString(data.heroSubtitle, 500, DEFAULT_SITE_SETTINGS.heroSubtitle),
-          heroBannerUrl: clampString(data.heroBannerUrl || '', 1000),
-          logoUrl: clampString(data.logoUrl || '', 1000),
+          heroBannerUrl: clampString(normalizeMediaUrl(data.heroBannerUrl || ''), 1000),
+          logoUrl: clampString(normalizeMediaUrl(data.logoUrl || ''), 1000),
           aboutMission: clampString(data.aboutMission, 2000, DEFAULT_SITE_SETTINGS.aboutMission),
           aboutVision: clampString(data.aboutVision, 2000, DEFAULT_SITE_SETTINGS.aboutVision),
           footerAddress: clampString(data.footerAddress || '', 300),
@@ -1044,7 +1123,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           name: clampString(data.name, 120),
           shortDescription: clampString(data.shortDescription, 300),
           fullDescription: clampString(data.fullDescription, 3000),
-          imageUrl: clampString(data.imageUrl || '', 1000),
+          imageUrl: clampString(normalizeMediaUrl(data.imageUrl || ''), 1000),
           headTeacherName: clampString(data.headTeacherName || '', 120),
           headTeacherTitle: clampString(data.headTeacherTitle || '', 120),
           labFacilities: clampString(data.labFacilities || '', 600),
@@ -1059,27 +1138,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await setDoc(doc(db, 'subjects', id), { ...payload, createdAt: serverTimestamp() });
           await logAdminAction('Created Subject', 'subjects', payload.name);
         }
-        unmarkItemDeleted(id);
+        await unmarkDefaultDeleted('subjects', id);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, unmarkItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, unmarkDefaultDeleted]
   );
 
   const deleteSubject = useCallback(
     async (id: string, title: string) => {
-      assertCloudAdminAuth();
+      const cloudUser = assertCloudAdminAuth();
       const path = `subjects/${id}`;
       try {
         await deleteDoc(doc(db, 'subjects', id));
-        markItemDeleted(id);
+        await markDefaultDeleted('subjects', id, cloudUser.uid);
         await logAdminAction('Deleted Subject', 'subjects', title);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, markItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, markDefaultDeleted]
   );
 
   const saveTeacher = useCallback(
@@ -1095,7 +1174,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           department: clampString(data.department, 100),
           qualifications: clampString(data.qualifications || '', 300),
           bio: clampString(data.bio || '', 1200),
-          photoUrl: clampString(data.photoUrl || '', 1000),
+          photoUrl: clampString(normalizeMediaUrl(data.photoUrl || ''), 1000),
           officeRoom: clampString(data.officeRoom || '', 80),
           updatedAt: serverTimestamp(),
         };
@@ -1106,27 +1185,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await setDoc(doc(db, 'teachers', id), { ...payload, createdAt: serverTimestamp() });
           await logAdminAction('Added Teacher', 'teachers', payload.name);
         }
-        unmarkItemDeleted(id);
+        await unmarkDefaultDeleted('teachers', id);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, unmarkItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, unmarkDefaultDeleted]
   );
 
   const deleteTeacher = useCallback(
     async (id: string, name: string) => {
-      assertCloudAdminAuth();
+      const cloudUser = assertCloudAdminAuth();
       const path = `teachers/${id}`;
       try {
         await deleteDoc(doc(db, 'teachers', id));
-        markItemDeleted(id);
+        await markDefaultDeleted('teachers', id, cloudUser.uid);
         await logAdminAction('Deleted Teacher', 'teachers', name);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, markItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, markDefaultDeleted]
   );
 
   const saveStudent = useCallback(
@@ -1142,7 +1221,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           stream: clampString(data.stream, 100),
           roleTitle: clampString(data.roleTitle || '', 120),
           achievementsSummary: clampString(data.achievementsSummary || '', 800),
-          photoUrl: clampString(data.photoUrl || '', 1000),
+          photoUrl: clampString(normalizeMediaUrl(data.photoUrl || ''), 1000),
           graduationYear: clampString(data.graduationYear || '', 20),
           featured: Boolean(data.featured),
           updatedAt: serverTimestamp(),
@@ -1154,27 +1233,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await setDoc(doc(db, 'students', id), { ...payload, createdAt: serverTimestamp() });
           await logAdminAction('Added Student', 'students', payload.fullName);
         }
-        unmarkItemDeleted(id);
+        await unmarkDefaultDeleted('students', id);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, unmarkItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, unmarkDefaultDeleted]
   );
 
   const deleteStudent = useCallback(
     async (id: string, name: string) => {
-      assertCloudAdminAuth();
+      const cloudUser = assertCloudAdminAuth();
       const path = `students/${id}`;
       try {
         await deleteDoc(doc(db, 'students', id));
-        markItemDeleted(id);
+        await markDefaultDeleted('students', id, cloudUser.uid);
         await logAdminAction('Deleted Student', 'students', name);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, markItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, markDefaultDeleted]
   );
 
   const saveCommunityDirectoryMember = useCallback(
@@ -1198,8 +1277,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           position: data.position,
           year: clampString(data.year || '2026', 12) || '2026',
           bio: clampString(data.bio, 1200),
-          photoUrl: clampString(data.photoUrl || '', 1000),
-          secondaryPhotoUrl: clampString(data.secondaryPhotoUrl || '', 1000),
+          photoUrl: clampString(normalizeMediaUrl(data.photoUrl || ''), 1000),
+          secondaryPhotoUrl: clampString(normalizeMediaUrl(data.secondaryPhotoUrl || ''), 1000),
           memberCode: clampString(data.memberCode || '', 40),
           isExecutive: Boolean(data.isExecutive),
           order: clampNumber(data.order, 0, 10000, 10),
@@ -1224,27 +1303,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             payload.fullName
           );
         }
-        unmarkItemDeleted(id);
+        await unmarkDefaultDeleted('communityDirectory', id);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, unmarkItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, unmarkDefaultDeleted]
   );
 
   const deleteCommunityDirectoryMember = useCallback(
     async (id: string, fullName: string) => {
-      assertCloudAdminAuth();
+      const cloudUser = assertCloudAdminAuth();
       const path = `communityDirectory/${id}`;
       try {
         await deleteDoc(doc(db, 'communityDirectory', id));
-        markItemDeleted(id);
+        await markDefaultDeleted('communityDirectory', id, cloudUser.uid);
         await logAdminAction('Deleted Community Member', 'communityDirectory', fullName);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, markItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, markDefaultDeleted]
   );
 
   const seedDefaultCommunityDirectory = useCallback(async () => {
@@ -1254,7 +1333,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const now = serverTimestamp();
       const batch = writeBatch(db);
       DEFAULT_COMMUNITY_DIRECTORY.forEach(({ id, ...rest }) => {
-        unmarkItemDeleted(id);
+        const tombstoneId = makeTombstoneId('communityDirectory', id);
+        if (deletedDefaultKeys.includes(tombstoneId)) {
+          batch.delete(doc(db, 'deletedDefaults', tombstoneId));
+        }
         batch.set(doc(db, 'communityDirectory', id), {
           ...rest,
           createdAt: now,
@@ -1270,7 +1352,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
     }
-  }, [assertCloudAdminAuth, logAdminAction]);
+  }, [assertCloudAdminAuth, logAdminAction, deletedDefaultKeys]);
 
   const saveEvent = useCallback(
     async (data: Omit<CampusEvent, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
@@ -1287,7 +1369,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           timeLabel: clampString(data.timeLabel || '', 60),
           location: clampString(data.location, 160),
           description: clampString(data.description || '', 2000),
-          imageUrl: clampString(data.imageUrl || '', 1000),
+          imageUrl: clampString(normalizeMediaUrl(data.imageUrl || ''), 1000),
           isUpcoming: Boolean(data.isUpcoming),
           registrationLink: clampString(data.registrationLink || '', 1000),
           updatedAt: serverTimestamp(),
@@ -1299,27 +1381,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await setDoc(doc(db, 'events', id), { ...payload, createdAt: serverTimestamp() });
           await logAdminAction('Created Event', 'events', payload.title);
         }
-        unmarkItemDeleted(id);
+        await unmarkDefaultDeleted('events', id);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, unmarkItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, unmarkDefaultDeleted]
   );
 
   const deleteEvent = useCallback(
     async (id: string, title: string) => {
-      assertCloudAdminAuth();
+      const cloudUser = assertCloudAdminAuth();
       const path = `events/${id}`;
       try {
         await deleteDoc(doc(db, 'events', id));
-        markItemDeleted(id);
+        await markDefaultDeleted('events', id, cloudUser.uid);
         await logAdminAction('Deleted Event', 'events', title);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, markItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, markDefaultDeleted]
   );
 
   const saveAchievement = useCallback(
@@ -1339,7 +1421,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           awardDate: clampString(data.awardDate || '', 40),
           recipients: clampString(data.recipients || '', 240),
           description: clampString(data.description || '', 1500),
-          imageUrl: clampString(data.imageUrl || '', 1000),
+          imageUrl: clampString(normalizeMediaUrl(data.imageUrl || ''), 1000),
           featured: Boolean(data.featured),
           updatedAt: serverTimestamp(),
         };
@@ -1350,27 +1432,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await setDoc(doc(db, 'achievements', id), { ...payload, createdAt: serverTimestamp() });
           await logAdminAction('Published Achievement', 'achievements', payload.title);
         }
-        unmarkItemDeleted(id);
+        await unmarkDefaultDeleted('achievements', id);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, unmarkItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, unmarkDefaultDeleted]
   );
 
   const deleteAchievement = useCallback(
     async (id: string, title: string) => {
-      assertCloudAdminAuth();
+      const cloudUser = assertCloudAdminAuth();
       const path = `achievements/${id}`;
       try {
         await deleteDoc(doc(db, 'achievements', id));
-        markItemDeleted(id);
+        await markDefaultDeleted('achievements', id, cloudUser.uid);
         await logAdminAction('Deleted Achievement', 'achievements', title);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, markItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, markDefaultDeleted]
   );
 
   const saveAnnouncement = useCallback(
@@ -1384,11 +1466,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           title: clampString(data.title, 160),
           summary: clampString(data.summary, 360),
           body: clampString(data.body || '', 3000),
-          imageUrl: clampString(data.imageUrl || '', 1000),
+          imageUrl: clampString(normalizeMediaUrl(data.imageUrl || ''), 1000),
           priority: data.priority,
           publishDate: clampString(data.publishDate, 40),
           pinnedToHome: Boolean(data.pinnedToHome),
-          showAsPopup: Boolean(data.showAsPopup),
           authorName: clampString(data.authorName || user?.displayName || 'Admin', 120),
           updatedAt: serverTimestamp(),
         };
@@ -1399,27 +1480,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await setDoc(doc(db, 'announcements', id), { ...payload, createdAt: serverTimestamp() });
           await logAdminAction('Published Announcement', 'announcements', payload.title);
         }
-        unmarkItemDeleted(id);
+        await unmarkDefaultDeleted('announcements', id);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
-    [assertCloudAdminAuth, user, logAdminAction, unmarkItemDeleted]
+    [assertCloudAdminAuth, user, logAdminAction, unmarkDefaultDeleted]
   );
 
   const deleteAnnouncement = useCallback(
     async (id: string, title: string) => {
-      assertCloudAdminAuth();
+      const cloudUser = assertCloudAdminAuth();
       const path = `announcements/${id}`;
       try {
         await deleteDoc(doc(db, 'announcements', id));
-        markItemDeleted(id);
+        await markDefaultDeleted('announcements', id, cloudUser.uid);
         await logAdminAction('Deleted Announcement', 'announcements', title);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, markItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, markDefaultDeleted]
   );
 
   const saveGalleryItem = useCallback(
@@ -1433,7 +1514,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           title: clampString(data.title, 160),
           category: clampString(data.category, 80),
           mediaType: data.mediaType,
-          mediaUrl: clampString(data.mediaUrl, 1000),
+          mediaUrl: clampString(normalizeMediaUrl(data.mediaUrl), 1000),
           description: clampString(data.description || '', 600),
           capturedDate: clampString(data.capturedDate || '', 40),
           driveUrl: clampString(data.driveUrl || '', 500),
@@ -1446,27 +1527,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await setDoc(doc(db, 'gallery', id), { ...payload, createdAt: serverTimestamp() });
           await logAdminAction('Added Gallery Media', 'gallery', payload.title);
         }
-        unmarkItemDeleted(id);
+        await unmarkDefaultDeleted('gallery', id);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, unmarkItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, unmarkDefaultDeleted]
   );
 
   const deleteGalleryItem = useCallback(
     async (id: string, title: string) => {
-      assertCloudAdminAuth();
+      const cloudUser = assertCloudAdminAuth();
       const path = `gallery/${id}`;
       try {
         await deleteDoc(doc(db, 'gallery', id));
-        markItemDeleted(id);
+        await markDefaultDeleted('gallery', id, cloudUser.uid);
         await logAdminAction('Deleted Gallery Item', 'gallery', title);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, markItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, markDefaultDeleted]
   );
 
   const saveProject = useCallback(
@@ -1483,7 +1564,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           year: clampString(data.year, 12),
           summary: clampString(data.summary, 500),
           technicalDetails: clampString(data.technicalDetails || '', 3000),
-          imageUrl: clampString(data.imageUrl || '', 1000),
+          imageUrl: clampString(normalizeMediaUrl(data.imageUrl || ''), 1000),
           demoUrl: clampString(data.demoUrl || '', 1000),
           featured: Boolean(data.featured),
           updatedAt: serverTimestamp(),
@@ -1495,27 +1576,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await setDoc(doc(db, 'projects', id), { ...payload, createdAt: serverTimestamp() });
           await logAdminAction('Added Student Project', 'projects', payload.title);
         }
-        unmarkItemDeleted(id);
+        await unmarkDefaultDeleted('projects', id);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, unmarkItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, unmarkDefaultDeleted]
   );
 
   const deleteProject = useCallback(
     async (id: string, title: string) => {
-      assertCloudAdminAuth();
+      const cloudUser = assertCloudAdminAuth();
       const path = `projects/${id}`;
       try {
         await deleteDoc(doc(db, 'projects', id));
-        markItemDeleted(id);
+        await markDefaultDeleted('projects', id, cloudUser.uid);
         await logAdminAction('Deleted Project', 'projects', title);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, markItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, markDefaultDeleted]
   );
 
   const saveDownloadResource = useCallback(
@@ -1542,27 +1623,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await setDoc(doc(db, 'downloads', id), { ...payload, createdAt: serverTimestamp() });
           await logAdminAction('Added Download Resource', 'downloads', payload.title);
         }
-        unmarkItemDeleted(id);
+        await unmarkDefaultDeleted('downloads', id);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, unmarkItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, unmarkDefaultDeleted]
   );
 
   const deleteDownloadResource = useCallback(
     async (id: string, title: string) => {
-      assertCloudAdminAuth();
+      const cloudUser = assertCloudAdminAuth();
       const path = `downloads/${id}`;
       try {
         await deleteDoc(doc(db, 'downloads', id));
-        markItemDeleted(id);
+        await markDefaultDeleted('downloads', id, cloudUser.uid);
         await logAdminAction('Deleted Resource', 'downloads', title);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, markItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, markDefaultDeleted]
   );
 
   const saveHistoryMilestone = useCallback(
@@ -1578,7 +1659,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           title: clampString(data.title, 160),
           description: clampString(data.description, 2500),
           impactSummary: clampString(data.impactSummary || '', 500),
-          imageUrl: clampString(data.imageUrl || '', 1000),
+          imageUrl: clampString(normalizeMediaUrl(data.imageUrl || ''), 1000),
           order: clampNumber(data.order, 0, 1000, 1),
           updatedAt: serverTimestamp(),
         };
@@ -1589,27 +1670,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await setDoc(doc(db, 'historyEvents', id), { ...payload, createdAt: serverTimestamp() });
           await logAdminAction('Added History Milestone', 'historyEvents', payload.title);
         }
-        unmarkItemDeleted(id);
+        await unmarkDefaultDeleted('historyEvents', id);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, unmarkItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, unmarkDefaultDeleted]
   );
 
   const deleteHistoryMilestone = useCallback(
     async (id: string, title: string) => {
-      assertCloudAdminAuth();
+      const cloudUser = assertCloudAdminAuth();
       const path = `historyEvents/${id}`;
       try {
         await deleteDoc(doc(db, 'historyEvents', id));
-        markItemDeleted(id);
+        await markDefaultDeleted('historyEvents', id, cloudUser.uid);
         await logAdminAction('Deleted History Milestone', 'historyEvents', title);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, markItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, markDefaultDeleted]
   );
 
   const seedDefaultHistory = useCallback(async () => {
@@ -1619,7 +1700,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const now = serverTimestamp();
       const batch = writeBatch(db);
       DEFAULT_HISTORY_EVENTS.forEach(({ id, ...rest }) => {
-        unmarkItemDeleted(id);
+        const tombstoneId = makeTombstoneId('historyEvents', id);
+        if (deletedDefaultKeys.includes(tombstoneId)) {
+          batch.delete(doc(db, 'deletedDefaults', tombstoneId));
+        }
         batch.set(doc(db, 'historyEvents', id), { ...rest, createdAt: now, updatedAt: now });
       });
       await batch.commit();
@@ -1627,7 +1711,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
     }
-  }, [assertCloudAdminAuth, logAdminAction, unmarkItemDeleted]);
+  }, [assertCloudAdminAuth, logAdminAction, deletedDefaultKeys]);
 
   const createCommunityPost = useCallback(
     async (data: {
@@ -1659,7 +1743,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           category: data.category,
           title: clampString(data.title, 160),
           content: clampString(data.content, 3000),
-          imageUrl: clampString(data.imageUrl || '', 1000),
+          imageUrl: clampString(normalizeMediaUrl(data.imageUrl || ''), 1000),
           pinned: false,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -1681,14 +1765,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         imageUrl?: string;
       }
     ) => {
-      if (!user || !user.emailVerified) return;
+      if (!user || !user.emailVerified) {
+        throw new Error('Please sign in with a verified Google account to edit this post.');
+      }
       const path = `communityPosts/${id}`;
       try {
         await updateDoc(doc(db, 'communityPosts', id), {
           category: data.category,
           title: clampString(data.title, 160),
           content: clampString(data.content, 3000),
-          imageUrl: clampString(data.imageUrl || '', 1000),
+          imageUrl: clampString(normalizeMediaUrl(data.imageUrl || ''), 1000),
           updatedAt: serverTimestamp(),
         });
       } catch (error) {
@@ -1791,7 +1877,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const deleteCommunityComment = useCallback(
     async (postId: string, commentId: string) => {
-      if (!user) return;
+      if (!user || !user.emailVerified) {
+        throw new Error('Please sign in with a verified Google account to delete this comment.');
+      }
       const path = `communityPosts/${postId}/comments/${commentId}`;
       try {
         await deleteDoc(doc(db, 'communityPosts', postId, 'comments', commentId));
@@ -1954,12 +2042,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await setDoc(doc(db, 'customLinks', id), { ...payload, createdAt: serverTimestamp() });
           await logAdminAction('Added Custom Link', 'customLinks', payload.title);
         }
-        unmarkItemDeleted(id);
+        await unmarkDefaultDeleted('customLinks', id);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, unmarkItemDeleted]
+    [assertCloudAdminAuth, logAdminAction, unmarkDefaultDeleted]
   );
 
   const deleteCustomLink = useCallback(
@@ -1968,13 +2056,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const path = `customLinks/${id}`;
       try {
         await deleteDoc(doc(db, 'customLinks', id));
-        markItemDeleted(id);
         await logAdminAction('Deleted Custom Link', 'customLinks', title);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [assertCloudAdminAuth, logAdminAction, markItemDeleted]
+    [assertCloudAdminAuth, logAdminAction]
   );
 
   const submitContactMessage = useCallback(
@@ -2119,13 +2206,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       siteSettingsDoc.heroSubtitle.trim() === legacyDefaultHeroSubtitle
         ? DEFAULT_SITE_SETTINGS.heroSubtitle
         : siteSettingsDoc.heroSubtitle;
+    const normalizedBanner = normalizeMediaUrl(siteSettingsDoc.heroBannerUrl);
+    const normalizedLogo = normalizeMediaUrl(siteSettingsDoc.logoUrl);
     return {
       ...DEFAULT_SITE_SETTINGS,
       ...siteSettingsDoc,
       siteTitle: normalizedTitle,
       heroSubtitle: normalizedHeroSubtitle,
+      heroBannerUrl: normalizedBanner || DEFAULT_SITE_SETTINGS.heroBannerUrl,
       footerCopyright: normalizedCopyright,
-      logoUrl: siteSettingsDoc.logoUrl?.trim() ? siteSettingsDoc.logoUrl : DEFAULT_WEB_LOGO,
+      logoUrl: normalizedLogo || DEFAULT_WEB_LOGO,
       maintenanceMode: siteSettingsDoc.maintenanceMode ?? DEFAULT_SITE_SETTINGS.maintenanceMode ?? false,
       maintenanceAnnouncement: siteSettingsDoc.maintenanceAnnouncement || DEFAULT_SITE_SETTINGS.maintenanceAnnouncement || '',
       maintenanceExpectedTime: siteSettingsDoc.maintenanceExpectedTime || DEFAULT_SITE_SETTINGS.maintenanceExpectedTime || '',
@@ -2136,85 +2226,153 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
   }, [siteSettingsDoc]);
   const subjects = useMemo<Subject[]>(() => {
-    const merged = mergeCollectionWithDefaults(DEFAULT_SUBJECTS, subjectsDocs, localDeletedIds);
-    return merged.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  }, [subjectsDocs, localDeletedIds]);
+    const merged = mergeCollectionWithDefaults(
+      DEFAULT_SUBJECTS,
+      subjectsDocs,
+      deletedDefaultKeys,
+      'subjects'
+    );
+    return merged
+      .map((item) => ({ ...item, imageUrl: normalizeMediaUrl(item.imageUrl) }))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }, [subjectsDocs, deletedDefaultKeys]);
 
   const teachers = useMemo<Teacher[]>(() => {
-    return mergeCollectionWithDefaults(DEFAULT_TEACHERS, teachersDocs, localDeletedIds);
-  }, [teachersDocs, localDeletedIds]);
+    return mergeCollectionWithDefaults(
+      DEFAULT_TEACHERS,
+      teachersDocs,
+      deletedDefaultKeys,
+      'teachers'
+    ).map((item) => ({ ...item, photoUrl: normalizeMediaUrl(item.photoUrl) }));
+  }, [teachersDocs, deletedDefaultKeys]);
 
   const students = useMemo<Student[]>(() => {
-    return mergeCollectionWithDefaults(DEFAULT_STUDENTS, studentsDocs, localDeletedIds);
-  }, [studentsDocs, localDeletedIds]);
+    return mergeCollectionWithDefaults(
+      DEFAULT_STUDENTS,
+      studentsDocs,
+      deletedDefaultKeys,
+      'students'
+    ).map((item) => ({ ...item, photoUrl: normalizeMediaUrl(item.photoUrl) }));
+  }, [studentsDocs, deletedDefaultKeys]);
 
   const events = useMemo<CampusEvent[]>(() => {
-    return mergeCollectionWithDefaults(DEFAULT_EVENTS, eventsDocs, localDeletedIds);
-  }, [eventsDocs, localDeletedIds]);
+    const merged = mergeCollectionWithDefaults<CampusEvent>(
+      DEFAULT_EVENTS as CampusEvent[],
+      eventsDocs,
+      deletedDefaultKeys,
+      'events'
+    );
+    return merged
+      .map((item) => ({ ...item, imageUrl: normalizeMediaUrl(item.imageUrl) }))
+      .sort((a, b) => {
+        const dateCmp = (b.eventDate || '').localeCompare(a.eventDate || '');
+        if (dateCmp !== 0) return dateCmp;
+        return (b.updatedAt?.seconds ?? b.createdAt?.seconds ?? 0) - (a.updatedAt?.seconds ?? a.createdAt?.seconds ?? 0);
+      });
+  }, [eventsDocs, deletedDefaultKeys]);
 
   const achievements = useMemo<Achievement[]>(() => {
-    return mergeCollectionWithDefaults(DEFAULT_ACHIEVEMENTS, achievementsDocs, localDeletedIds);
-  }, [achievementsDocs, localDeletedIds]);
+    const merged = mergeCollectionWithDefaults(
+      DEFAULT_ACHIEVEMENTS,
+      achievementsDocs,
+      deletedDefaultKeys,
+      'achievements'
+    );
+    return merged
+      .map((item) => ({ ...item, imageUrl: normalizeMediaUrl(item.imageUrl) }))
+      .sort((a, b) => (b.year || '').localeCompare(a.year || ''));
+  }, [achievementsDocs, deletedDefaultKeys]);
 
   const announcements = useMemo<Announcement[]>(() => {
-    return mergeCollectionWithDefaults(DEFAULT_ANNOUNCEMENTS, announcementsDocs, localDeletedIds);
-  }, [announcementsDocs, localDeletedIds]);
+    const merged = mergeCollectionWithDefaults<Announcement>(
+      DEFAULT_ANNOUNCEMENTS as Announcement[],
+      announcementsDocs,
+      deletedDefaultKeys,
+      'announcements'
+    );
+    return merged
+      .map((item) => ({ ...item, imageUrl: normalizeMediaUrl(item.imageUrl) }))
+      .sort((a, b) => {
+        const dateCmp = (b.publishDate || '').localeCompare(a.publishDate || '');
+        if (dateCmp !== 0) return dateCmp;
+        return (b.updatedAt?.seconds ?? b.createdAt?.seconds ?? 0) - (a.updatedAt?.seconds ?? a.createdAt?.seconds ?? 0);
+      });
+  }, [announcementsDocs, deletedDefaultKeys]);
 
   const gallery = useMemo<GalleryItem[]>(() => {
-    return mergeCollectionWithDefaults(DEFAULT_GALLERY, galleryDocs, localDeletedIds);
-  }, [galleryDocs, localDeletedIds]);
+    return mergeCollectionWithDefaults(
+      DEFAULT_GALLERY,
+      galleryDocs,
+      deletedDefaultKeys,
+      'gallery'
+    ).map((item) => ({ ...item, mediaUrl: normalizeMediaUrl(item.mediaUrl) }));
+  }, [galleryDocs, deletedDefaultKeys]);
 
   const projects = useMemo<StudentProject[]>(() => {
-    return mergeCollectionWithDefaults(DEFAULT_PROJECTS, projectsDocs, localDeletedIds);
-  }, [projectsDocs, localDeletedIds]);
+    return mergeCollectionWithDefaults(
+      DEFAULT_PROJECTS,
+      projectsDocs,
+      deletedDefaultKeys,
+      'projects'
+    ).map((item) => ({ ...item, imageUrl: normalizeMediaUrl(item.imageUrl) }));
+  }, [projectsDocs, deletedDefaultKeys]);
 
   const downloads = useMemo<DownloadResource[]>(() => {
-    return mergeCollectionWithDefaults(DEFAULT_DOWNLOADS, downloadsDocs, localDeletedIds);
-  }, [downloadsDocs, localDeletedIds]);
+    return mergeCollectionWithDefaults(
+      DEFAULT_DOWNLOADS,
+      downloadsDocs,
+      deletedDefaultKeys,
+      'downloads'
+    );
+  }, [downloadsDocs, deletedDefaultKeys]);
 
   const historyEvents = useMemo<HistoryMilestone[]>(() => {
     const merged = mergeCollectionWithDefaults(
       DEFAULT_HISTORY_EVENTS,
       historyEventsDocs,
-      localDeletedIds
+      deletedDefaultKeys,
+      'historyEvents'
     );
-    return merged.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  }, [historyEventsDocs, localDeletedIds]);
+    return merged
+      .map((item) => ({ ...item, imageUrl: normalizeMediaUrl(item.imageUrl) }))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }, [historyEventsDocs, deletedDefaultKeys]);
 
   const communityPosts = useMemo<CommunityPost[]>(() => {
     return [...communityPostsDocs]
-      .filter((item) => !localDeletedIds.includes(item.id))
+      .map((item) => ({
+        ...item,
+        imageUrl: normalizeMediaUrl(item.imageUrl),
+        authorPhotoUrl: normalizeMediaUrl(item.authorPhotoUrl),
+      }))
       .sort((a, b) => {
         if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
         const aSec = a.createdAt?.seconds ?? 0;
         const bSec = b.createdAt?.seconds ?? 0;
         return bSec - aSec;
       });
-  }, [communityPostsDocs, localDeletedIds]);
-
-  const activePopupAnnouncement = useMemo<Announcement | null>(() => {
-    return announcements.find((item) => item.showAsPopup === true) ?? null;
-  }, [announcements]);
+  }, [communityPostsDocs]);
 
   const communityDirectory = useMemo<CommunityDirectoryMember[]>(() => {
     const merged = mergeCollectionWithDefaults(
       DEFAULT_COMMUNITY_DIRECTORY as CommunityDirectoryMember[],
       communityDirectoryDocs,
-      localDeletedIds
+      deletedDefaultKeys,
+      'communityDirectory'
     );
     return merged
       .map((item) => ({
         ...item,
+        photoUrl: normalizeMediaUrl(item.photoUrl),
+        secondaryPhotoUrl: normalizeMediaUrl(item.secondaryPhotoUrl),
         year: typeof item.year === 'string' && item.year.trim() ? item.year.trim() : '2026',
       }))
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  }, [communityDirectoryDocs, localDeletedIds]);
+  }, [communityDirectoryDocs, deletedDefaultKeys]);
 
   const customLinks = useMemo<CustomLink[]>(() => {
-    return customLinksDocs
-      .filter((item) => !localDeletedIds.includes(item.id))
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  }, [customLinksDocs, localDeletedIds]);
+    return [...customLinksDocs].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }, [customLinksDocs]);
 
   const registeredMembersCount = useMemo(() => {
     const publicActiveCount = communityMembersDocs.filter((m) => m.status !== 'inactive').length;
@@ -2234,8 +2392,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     adminAuthReady,
     adminEmail,
     loadingData,
-    eventsLoaded: eventsSynced || !loadingData,
-    announcementsLoaded: announcementsSynced || !loadingData,
+    eventsLoaded: (eventsSynced && deletedDefaultsSynced) || initialLoadTimedOut,
+    announcementsLoaded: (announcementsSynced && deletedDefaultsSynced) || initialLoadTimedOut,
     isFirestoreSeeded,
     seedingInProgress,
     siteSettings,
@@ -2245,7 +2403,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     events,
     achievements,
     announcements,
-    activePopupAnnouncement,
     gallery,
     projects,
     downloads,

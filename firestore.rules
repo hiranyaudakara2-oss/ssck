@@ -686,5 +686,25 @@ service cloud.firestore {
         incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(memberId);
     }
+
+    // 20. DeletedDefaults (Global tombstone registry for deleted seed records)
+    function isValidDeletedDefault(data) {
+      return data.keys().hasAll(['itemId', 'collectionName', 'deletedBy', 'deletedAt']) &&
+        data.keys().hasOnly(['itemId', 'collectionName', 'deletedBy', 'deletedAt']) &&
+        data.itemId is string && data.itemId.size() >= 1 && data.itemId.size() <= 128 &&
+        data.collectionName is string && data.collectionName.size() >= 2 && data.collectionName.size() <= 60 &&
+        data.deletedBy is string && data.deletedBy.size() >= 2 && data.deletedBy.size() <= 128 &&
+        data.deletedAt is timestamp;
+    }
+
+    match /deletedDefaults/{tombstoneId} {
+      allow get: if isValidId(tombstoneId);
+      allow list: if true;
+      allow create: if isAdmin() && isValidId(tombstoneId) && isValidDeletedDefault(incoming()) &&
+        incoming().deletedBy == request.auth.uid && incoming().deletedAt == request.time;
+      allow update: if isAdmin() && isValidId(tombstoneId) && isValidDeletedDefault(incoming()) &&
+        incoming().deletedBy == request.auth.uid && incoming().deletedAt == request.time;
+      allow delete: if isAdmin() && isValidId(tombstoneId);
+    }
   }
 }

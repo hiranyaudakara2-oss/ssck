@@ -20,6 +20,7 @@ import { CustomLinksSlot } from '../components/CustomLinksSlot';
 import { HoverInfoBox } from '../components/HoverInfoBox';
 import { MorphingBackdrop, RevealBlock, SafeImage } from '../components/MotionPrimitives';
 import { useData } from '../context/DataContext';
+import { optimizeImageFile } from '../utils/imageOptimizer';
 import type {
   CommunityCategory,
   CommunityComment,
@@ -144,20 +145,36 @@ function CommunityPostCard({ post }: { post: CommunityPost }) {
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingEdit(true);
+    setEditImageError('');
     try {
+      let finalEditImageUrl = editImageUrl;
+      if (editPendingFile) {
+        setEditUploadPct(5);
+        finalEditImageUrl = await uploadImageToImgBB(
+          editPendingFile,
+          'community',
+          setEditUploadPct
+        );
+        setEditImageUrl(finalEditImageUrl);
+        setEditPendingFile(null);
+        setEditPreviewUrl('');
+      }
       await updateCommunityPost(post.id, {
         category: editCategory,
         title: editTitle,
         content: editContent,
-        imageUrl: editImageUrl,
+        imageUrl: finalEditImageUrl,
       });
       setIsEditing(false);
+    } catch (err) {
+      setEditImageError(err instanceof Error ? err.message : 'Unable to save post changes.');
     } finally {
+      setEditUploadPct(null);
       setSavingEdit(false);
     }
   };
 
-  const handleSelectEditImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSelectEditImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
@@ -166,14 +183,13 @@ function CommunityPostCard({ post }: { post: CommunityPost }) {
       setEditImageError('Please select a valid image file (PNG, JPG, WEBP, GIF).');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setEditPendingFile(file);
-        setEditPreviewUrl(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const optimized = await optimizeImageFile(file, { maxDimension: 1400, quality: 0.84 });
+      setEditPendingFile(optimized.file);
+      setEditPreviewUrl(optimized.previewDataUrl);
+    } catch {
+      setEditImageError('Unable to process selected image file.');
+    }
   };
 
   const handleConfirmEditUpload = async () => {

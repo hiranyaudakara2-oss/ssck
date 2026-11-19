@@ -26,6 +26,7 @@ import {
 import { useData } from '../../context/DataContext';
 import { DEFAULT_WEB_LOGO } from '../../data/seedDefaults';
 import type { PageRoute } from '../../types';
+import { normalizeMediaUrl } from '../../utils/validation';
 import {
   DownloadsTab,
   EventsAchievementsTab,
@@ -59,7 +60,7 @@ const ADMIN_TABS: { id: AdminTabId; label: string; icon: React.ComponentType<{ c
   { id: 'settings', label: 'Website Settings', icon: Globe },
   { id: 'directory', label: 'Manage Community Members', icon: Crown },
   { id: 'subjects', label: 'Subjects', icon: BookOpen },
-  { id: 'announcements', label: 'Announcements & Popups', icon: Megaphone },
+  { id: 'announcements', label: 'Announcements', icon: Megaphone },
   { id: 'history', label: 'History Timeline', icon: Clock },
   { id: 'community', label: 'Community Posts', icon: MessageSquare },
   { id: 'links', label: 'Custom Links', icon: Link2 },
@@ -93,6 +94,7 @@ export function AdminDashboardPage({ onNavigate }: { onNavigate: (route: PageRou
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [cloudAuthError, setCloudAuthError] = useState<string | null>(null);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,6 +120,7 @@ export function AdminDashboardPage({ onNavigate }: { onNavigate: (route: PageRou
 
   const handleGoogleAdminLogin = async () => {
     setLoginError(null);
+    setCloudAuthError(null);
     setSubmitting(true);
     try {
       const signedIn = await signInWithGoogle();
@@ -125,7 +128,9 @@ export function AdminDashboardPage({ onNavigate }: { onNavigate: (route: PageRou
         return;
       }
     } catch (err) {
-      setLoginError(err instanceof Error ? err.message : 'Google sign-in failed.');
+      const msg = err instanceof Error ? err.message : 'Google sign-in failed.';
+      setLoginError(msg);
+      setCloudAuthError(msg);
     } finally {
       setSubmitting(false);
     }
@@ -146,7 +151,7 @@ export function AdminDashboardPage({ onNavigate }: { onNavigate: (route: PageRou
         <div className="glass-surface-elevated w-full max-w-md rounded-2xl p-8 shadow-2xl">
           <div className="flex flex-col items-center text-center">
             <img
-              src={siteSettings.logoUrl || DEFAULT_WEB_LOGO}
+              src={normalizeMediaUrl(siteSettings.logoUrl) || DEFAULT_WEB_LOGO}
               alt={siteSettings.siteTitle}
               referrerPolicy="no-referrer"
               className="h-14 w-14 object-contain drop-shadow-[0_4px_14px_rgba(96,165,250,0.35)]"
@@ -382,7 +387,7 @@ export function AdminDashboardPage({ onNavigate }: { onNavigate: (route: PageRou
 
           {!isAdmin && (
             <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-amber-500/40 bg-amber-950/45 px-4 py-3.5 text-xs text-amber-100 shadow-lg">
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="font-semibold text-amber-200">
                   Cloud Firestore Write Authorization Required
                 </p>
@@ -391,11 +396,17 @@ export function AdminDashboardPage({ onNavigate }: { onNavigate: (route: PageRou
                     ? `Signed in with ${user.email}, which lacks Cloud Firestore admin write permissions. Connect your authorized Google admin account (e.g. sscktechsociety@gmail.com or project owner).`
                     : `Connect your authorized Google account (${adminEmail || 'sscktechsociety@gmail.com'} or project owner) before creating, editing, or deleting Cloud Firestore records.`}
                 </p>
+                {cloudAuthError && (
+                  <p className="mt-2 rounded-lg border border-rose-500/40 bg-rose-950/60 px-3 py-2 text-[11px] font-medium text-rose-200">
+                    {cloudAuthError}
+                  </p>
+                )}
               </div>
               <button
                 type="button"
-                onClick={() => void signInWithGoogle()}
-                className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-amber-400 whitespace-nowrap"
+                disabled={submitting}
+                onClick={() => void handleGoogleAdminLogin()}
+                className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-amber-400 disabled:opacity-60 whitespace-nowrap"
               >
                 {user ? 'Switch Google Account' : 'Connect Cloud Auth'}
               </button>

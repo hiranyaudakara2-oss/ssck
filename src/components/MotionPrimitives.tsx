@@ -305,13 +305,19 @@ export function SafeImage({
   className?: string;
   fallbackLabel?: string;
 }) {
+  const normalizedSrc =
+    typeof src === 'string' && src.trim().startsWith('/src/assets/images/')
+      ? src.trim().replace(/^\/src\/assets\/images\//, '/assets/images/')
+      : typeof src === 'string'
+      ? src.trim()
+      : '';
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     setFailed(false);
-  }, [src]);
+  }, [normalizedSrc]);
 
-  if (!src || failed) {
+  if (!normalizedSrc || failed) {
     return (
       <div
         className={`flex flex-col items-center justify-center bg-gradient-to-br from-[#0c1633] via-[#132046] to-[#1e1b4b] p-6 text-center ${className}`}
@@ -330,7 +336,7 @@ export function SafeImage({
 
   return (
     <img
-      src={src}
+      src={normalizedSrc}
       alt={alt}
       referrerPolicy="no-referrer"
       loading="lazy"

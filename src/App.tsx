@@ -9,7 +9,6 @@ import React, {
   useState,
 } from 'react';
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from 'motion/react';
-import { AnnouncementPopup } from './components/AnnouncementPopup';
 import { BackgroundMusicPlayer } from './components/BackgroundMusicPlayer';
 import { CinematicLoader } from './components/CinematicLoader';
 import { CommandSearchModal } from './components/CommandSearchModal';
@@ -28,6 +27,7 @@ import {
 import { HomePage } from './pages/HomePage';
 import { MaintenancePage } from './pages/MaintenancePage';
 import type { PageRoute } from './types';
+import { normalizeMediaUrl } from './utils/validation';
 
 // Shared chunk loaders so route navigation and prefetching never load a module twice
 const loadAboutModule = () => import('./pages/AboutPage');
@@ -142,7 +142,7 @@ function loadRouteModule(route: PageRoute): Promise<void> {
 function prefetchImages(urls: Array<string | undefined | null>) {
   if (typeof window === 'undefined') return;
   for (const raw of urls) {
-    const url = raw?.trim();
+    const url = normalizeMediaUrl(raw);
     if (!url || prefetchedImageUrls.has(url)) continue;
     prefetchedImageUrls.add(url);
     const img = new Image();
@@ -568,8 +568,6 @@ function AppShell() {
           onComplete={() => setShowLoader(false)}
         />
       )}
-
-      {navState.route === 'home' && !showLoader && <AnnouncementPopup />}
 
       <CommandSearchModal
         open={searchOpen}

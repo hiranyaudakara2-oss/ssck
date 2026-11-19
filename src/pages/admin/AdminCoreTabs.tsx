@@ -1111,7 +1111,6 @@ export function AnnouncementsTab() {
       priority: 'important',
       publishDate: new Date().toISOString().slice(0, 10),
       pinnedToHome: true,
-      showAsPopup: true,
       authorName: 'Technology Office',
     });
   };
@@ -1139,7 +1138,6 @@ export function AnnouncementsTab() {
         priority: editing.priority || 'general',
         publishDate: editing.publishDate || new Date().toISOString().slice(0, 10),
         pinnedToHome: Boolean(editing.pinnedToHome),
-        showAsPopup: Boolean(editing.showAsPopup),
         authorName: editing.authorName || 'Technology Office',
       });
       setEditing(null);
@@ -1169,7 +1167,7 @@ export function AnnouncementsTab() {
         <div>
           <h2 className="font-display text-2xl font-bold text-white">Announcement Management</h2>
           <p className="mt-1 text-sm text-slate-400">
-            Publish official notices, attach images, pin updates, and trigger automatic homepage announcement popups.
+            Publish official notices, attach images, and pin key updates to the homepage.
           </p>
         </div>
         <button
@@ -1220,7 +1218,7 @@ export function AnnouncementsTab() {
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
               <label className="block text-xs text-slate-300">Publish Date</label>
               <input
@@ -1249,15 +1247,6 @@ export function AnnouncementsTab() {
                 className="h-4 w-4 rounded border-white/20"
               />
               <span>Pin to Homepage</span>
-            </label>
-            <label className="flex items-center gap-2 pt-6 text-xs font-medium text-amber-300">
-              <input
-                type="checkbox"
-                checked={Boolean(editing.showAsPopup)}
-                onChange={(e) => setEditing({ ...editing, showAsPopup: e.target.checked })}
-                className="h-4 w-4 rounded border-white/20"
-              />
-              <span>Show as Homepage Popup</span>
             </label>
           </div>
 
@@ -1374,12 +1363,6 @@ export function AnnouncementsTab() {
                     <>
                       <span aria-hidden="true">·</span>
                       <span className="text-emerald-300">Pinned to Homepage</span>
-                    </>
-                  )}
-                  {a.showAsPopup && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span className="font-semibold text-amber-300">Active Popup</span>
                     </>
                   )}
                 </div>

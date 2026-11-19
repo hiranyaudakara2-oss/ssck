@@ -16,6 +16,7 @@ import {
 import { useData } from '../context/DataContext';
 import { DEFAULT_WEB_LOGO } from '../data/seedDefaults';
 import type { PageRoute } from '../types';
+import { normalizeMediaUrl } from '../utils/validation';
 
 interface NavbarProps {
   currentRoute: PageRoute;
@@ -144,7 +145,7 @@ export function Navbar({ currentRoute, onNavigate, onPrefetch, hidden = false }:
         >
           <div className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-500/30 bg-cyan-950/40 shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-transform duration-300 group-hover:scale-105">
             <img
-              src={siteSettings.logoUrl || DEFAULT_WEB_LOGO}
+              src={normalizeMediaUrl(siteSettings.logoUrl) || DEFAULT_WEB_LOGO}
               alt={siteSettings.siteTitle}
               referrerPolicy="no-referrer"
               className="h-7 w-7 object-contain drop-shadow-[0_2px_8px_rgba(34,211,238,0.4)]"

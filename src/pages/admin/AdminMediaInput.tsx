@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Image as ImageIcon, Loader2, Trash2, Upload, X } from 'lucide-react';
+import { CheckCircle2, Image as ImageIcon, Loader2, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { optimizeImageFile } from '../../utils/imageOptimizer';
+import { normalizeMediaUrl } from '../../utils/validation';
 
 interface AdminMediaInputProps {
   label: string;
@@ -18,7 +19,7 @@ export function AdminMediaInput({
   onChange,
   folder,
   accept = 'image/*',
-  placeholder = 'https://... or upload image via ImgBB below',
+  placeholder = 'https://... or choose an image below (auto-uploads via ImgBB)',
 }: AdminMediaInputProps) {
   const { uploadImageToImgBB } = useData();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -31,6 +32,29 @@ export function AdminMediaInput({
   const [uploadSuccess, setUploadSuccess] = useState(false);
 
   const supportsImageUpload = accept.includes('image');
+  const displayValue = normalizeMediaUrl(value);
+
+  const uploadFileToImgBB = async (fileToUpload: File) => {
+    setUploadError('');
+    setUploadSuccess(false);
+    setUploading(true);
+    setProgress(8);
+    try {
+      const url = await uploadImageToImgBB(fileToUpload, folder, (pct) => setProgress(pct));
+      onChange(url);
+      setPendingFile(null);
+      setPreviewDataUrl('');
+      setUploadSuccess(true);
+    } catch (err) {
+      setUploadError(
+        err instanceof Error
+          ? `${err.message} You can retry or paste an image URL above.`
+          : 'ImgBB upload failed. You can retry or paste an image URL above.'
+      );
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -61,37 +85,19 @@ export function AdminMediaInput({
       if (optimized.wasCompressed && optimized.originalSize > optimized.optimizedSize) {
         const beforeKb = Math.round(optimized.originalSize / 1024);
         const afterKb = Math.max(1, Math.round(optimized.optimizedSize / 1024));
-        setOptimizationNote(`Optimized for fast web loading: ${beforeKb} KB → ${afterKb} KB`);
+        setOptimizationNote(`Optimized for fast web loading: ${beforeKb} KB -> ${afterKb} KB`);
       }
-    } catch {
-      setUploadError('Unable to read or optimize the selected image file.');
-    } finally {
       setOptimizing(false);
+      await uploadFileToImgBB(optimized.file);
+    } catch {
+      setOptimizing(false);
+      setUploadError('Unable to read or optimize the selected image file.');
     }
   };
 
   const handleConfirmUpload = async () => {
-    if (!pendingFile) return;
-    setUploadError('');
-    setUploadSuccess(false);
-    setUploading(true);
-    setProgress(5);
-    try {
-      const url = await uploadImageToImgBB(pendingFile, folder, (pct) => setProgress(pct));
-      onChange(url);
-      setPendingFile(null);
-      setPreviewDataUrl('');
-      setOptimizationNote('');
-      setUploadSuccess(true);
-    } catch (err) {
-      setUploadError(
-        err instanceof Error
-          ? `${err.message} You can also paste an image URL above.`
-          : 'ImgBB upload failed. Paste an image URL above.'
-      );
-    } finally {
-      setUploading(false);
-    }
+    if (!pendingFile || uploading) return;
+    await uploadFileToImgBB(pendingFile);
   };
 
   const handleCancelPending = () => {
@@ -113,6 +119,7 @@ export function AdminMediaInput({
           onChange={(e) => {
             onChange(e.target.value);
             setUploadSuccess(false);
+            setUploadError('');
           }}
           placeholder={placeholder}
           className="flex-1 rounded-lg border border-white/15 bg-[#091022] px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
@@ -120,12 +127,20 @@ export function AdminMediaInput({
 
         {supportsImageUpload && (
           <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-blue-500/35 bg-blue-600/15 px-3.5 py-2 text-xs font-semibold text-blue-200 transition-colors hover:bg-blue-600/25 whitespace-nowrap shrink-0">
-            {optimizing ? (
+            {optimizing || uploading ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <ImageIcon className="h-3.5 w-3.5" />
             )}
-            <span>{optimizing ? 'Optimizing...' : 'Choose Image'}</span>
+            <span>
+              {optimizing
+                ? 'Optimizing...'
+                : uploading
+                ? `Uploading ${progress}%`
+                : displayValue
+                ? 'Replace Image'
+                : 'Choose Image'}
+            </span>
             <input
               type="file"
               accept="image/*"
@@ -143,7 +158,7 @@ export function AdminMediaInput({
         </p>
       )}
 
-      {/* Pre-upload Preview & ImgBB Confirm Bar */}
+      {/* Active Upload / Retry Preview Bar */}
       {pendingFile && previewDataUrl && (
         <div className="rounded-xl border border-blue-500/35 bg-[#081024] p-3.5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -179,19 +194,20 @@ export function AdminMediaInput({
               )}
 
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  disabled={uploading}
-                  onClick={() => void handleConfirmUpload()}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
-                >
-                  {uploading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Upload className="h-3.5 w-3.5" />
-                  )}
-                  <span>{uploading ? `Uploading ${progress}%` : 'Upload to ImgBB'}</span>
-                </button>
+                {!uploading && (
+                  <button
+                    type="button"
+                    onClick={() => void handleConfirmUpload()}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-500"
+                  >
+                    {uploadError ? (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    ) : (
+                      <Upload className="h-3.5 w-3.5" />
+                    )}
+                    <span>{uploadError ? 'Retry ImgBB Upload' : 'Upload to ImgBB'}</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={uploading}
@@ -208,10 +224,10 @@ export function AdminMediaInput({
       )}
 
       {/* Existing/Uploaded Image Thumbnail */}
-      {!pendingFile && value && supportsImageUpload && (
+      {!pendingFile && displayValue && supportsImageUpload && (
         <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-[#081024]/70 p-2">
           <img
-            src={value}
+            src={displayValue}
             alt="Current media"
             referrerPolicy="no-referrer"
             className="h-12 w-16 shrink-0 rounded-md bg-[#050914] object-contain p-0.5"
@@ -223,7 +239,7 @@ export function AdminMediaInput({
                 <span>Uploaded to ImgBB</span>
               </p>
             )}
-            <p className="truncate font-mono text-[11px] text-slate-400">{value}</p>
+            <p className="truncate font-mono text-[11px] text-slate-400">{displayValue}</p>
           </div>
           <button
             type="button"

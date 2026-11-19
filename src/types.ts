@@ -146,7 +146,6 @@ export interface Announcement {
   priority: 'urgent' | 'important' | 'general';
   publishDate: string;
   pinnedToHome: boolean;
-  showAsPopup?: boolean;
   authorName?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;

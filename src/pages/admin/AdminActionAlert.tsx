@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { AlertTriangle, ShieldAlert, X } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 
@@ -9,15 +10,17 @@ export function AdminActionAlert({
   onDismiss: () => void;
 }) {
   const { user, isAdmin, signInWithGoogle } = useData();
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  if (!error) return null;
+  const activeError = authError || error;
+  if (!activeError) return null;
 
-  let displayMessage = error;
+  let displayMessage = activeError;
   let isPermissionDenied = false;
 
   try {
-    if (error.startsWith('{') && error.includes('"error"')) {
-      const parsed = JSON.parse(error) as {
+    if (activeError.startsWith('{') && activeError.includes('"error"')) {
+      const parsed = JSON.parse(activeError) as {
         error?: string;
         operationType?: string;
         path?: string;
@@ -37,10 +40,19 @@ export function AdminActionAlert({
       }
     }
   } catch {
-    displayMessage = error;
+    displayMessage = activeError;
   }
 
   const needsCloudAuth = isPermissionDenied || !user || !isAdmin;
+
+  const handleAuthorizeClick = async () => {
+    setAuthError(null);
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Google sign-in failed.');
+    }
+  };
 
   return (
     <div
@@ -60,7 +72,7 @@ export function AdminActionAlert({
         {needsCloudAuth && (
           <button
             type="button"
-            onClick={() => void signInWithGoogle()}
+            onClick={() => void handleAuthorizeClick()}
             className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition-colors hover:bg-amber-400"
           >
             Authorize Google Admin
@@ -68,7 +80,10 @@ export function AdminActionAlert({
         )}
         <button
           type="button"
-          onClick={onDismiss}
+          onClick={() => {
+            setAuthError(null);
+            onDismiss();
+          }}
           aria-label="Dismiss error"
           className="rounded-lg p-1 text-rose-200/80 transition-colors hover:bg-rose-900/50 hover:text-white"
         >
