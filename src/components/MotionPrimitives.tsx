@@ -356,6 +356,7 @@ export function SafeImage({
       alt={alt}
       referrerPolicy="no-referrer"
       loading="lazy"
+      decoding="async"
       onError={() => setFailed(true)}
       className={className}
     />

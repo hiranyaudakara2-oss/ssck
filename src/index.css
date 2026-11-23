@@ -145,3 +145,33 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Cross-browser and 60fps performance optimization helpers */
+.glass-surface,
+.glass-surface-elevated {
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  transform: translateZ(0);
+  will-change: transform, opacity;
+}
+
+@supports not (backdrop-filter: blur(16px)) {
+  .glass-surface {
+    background: rgba(12, 20, 44, 0.95);
+  }
+  .glass-surface-elevated {
+    background: rgba(18, 28, 58, 0.96);
+  }
+}
+
+/* Dynamic viewport height for mobile browser URL bar safety */
+.min-h-dvh {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Minimum touch target size for mobile accessibility (>= 44x44px) */
+button, a {
+  touch-action: manipulation;
+}
+
