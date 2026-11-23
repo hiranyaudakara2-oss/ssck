@@ -34,8 +34,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isVerified() && (
-        request.auth.token.email == 'hiranyaudakara2@gmail.com' ||
-        request.auth.token.email == 'sscktechsociety@gmail.com' ||
+        ('email' in request.auth.token && request.auth.token.email.lower() in ['hiranyaudakara2@gmail.com', 'sscktechsociety@gmail.com']) ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
@@ -69,10 +68,11 @@ service cloud.firestore {
     function isValidSiteSettings(data) {
       return data.keys().hasAll(['siteTitle', 'tagline', 'heroTitle', 'heroSubtitle', 'aboutMission', 'aboutVision', 'updatedAt', 'updatedBy']) &&
         data.keys().hasOnly([
-          'siteTitle', 'tagline', 'heroTitle', 'heroSubtitle', 'heroBannerUrl', 'logoUrl',
+          'siteTitle', 'tagline', 'heroTitle', 'heroSubtitle', 'heroBannerUrl', 'logoUrl', 'floatingWidgetImageUrl',
           'aboutMission', 'aboutVision', 'footerAddress', 'footerEmail', 'footerPhone', 'footerCopyright',
           'statsStudents', 'statsProjects', 'statsAwards', 'statsPassRate', 'statsVisitors',
-          'maintenanceMode', 'maintenanceAnnouncement', 'maintenanceExpectedTime', 'socialLinks',
+          'maintenanceMode', 'maintenanceAnnouncement', 'maintenanceExpectedTime',
+          'socialLinks',
           'updatedAt', 'updatedBy'
         ]) &&
         data.siteTitle is string && data.siteTitle.size() >= 2 && data.siteTitle.size() <= 120 &&
@@ -81,6 +81,7 @@ service cloud.firestore {
         data.heroSubtitle is string && data.heroSubtitle.size() >= 2 && data.heroSubtitle.size() <= 500 &&
         isOptionalString(data, 'heroBannerUrl', 1000) &&
         isOptionalString(data, 'logoUrl', 1000) &&
+        isOptionalString(data, 'floatingWidgetImageUrl', 1000) &&
         data.aboutMission is string && data.aboutMission.size() >= 2 && data.aboutMission.size() <= 2000 &&
         data.aboutVision is string && data.aboutVision.size() >= 2 && data.aboutVision.size() <= 2000 &&
         isOptionalString(data, 'footerAddress', 300) &&
@@ -200,16 +201,23 @@ service cloud.firestore {
     // 5. Events
     function isValidEvent(data) {
       return data.keys().hasAll(['title', 'category', 'eventDate', 'location', 'isUpcoming', 'createdAt', 'updatedAt']) &&
-        data.keys().hasOnly(['title', 'category', 'eventDate', 'startTime', 'timeLabel', 'location', 'description', 'imageUrl', 'isUpcoming', 'registrationLink', 'createdAt', 'updatedAt']) &&
-        data.title is string && data.title.size() >= 2 && data.title.size() <= 160 &&
-        data.category is string && data.category.size() >= 2 && data.category.size() <= 80 &&
+        data.keys().hasOnly([
+          'title', 'category', 'eventDate', 'startTime', 'timeLabel', 'location',
+          'description', 'imageUrl', 'isUpcoming', 'status', 'cancellationReason',
+          'liveStreamUrl', 'registrationLink', 'createdAt', 'updatedAt'
+        ]) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 80 &&
         data.eventDate is string && data.eventDate.size() >= 4 && data.eventDate.size() <= 60 &&
         isOptionalString(data, 'startTime', 20) &&
         isOptionalString(data, 'timeLabel', 60) &&
-        data.location is string && data.location.size() >= 2 && data.location.size() <= 160 &&
+        data.location is string && data.location.size() >= 1 && data.location.size() <= 160 &&
         isOptionalString(data, 'description', 2000) &&
         isOptionalString(data, 'imageUrl', 1000) &&
         data.isUpcoming is bool &&
+        (!('status' in data) || data.status in ['scheduled', 'live', 'cancelled', 'closed']) &&
+        isOptionalString(data, 'cancellationReason', 400) &&
+        isOptionalString(data, 'liveStreamUrl', 1000) &&
         isOptionalString(data, 'registrationLink', 1000) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -687,7 +695,29 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(memberId);
     }
 
-    // 20. DeletedDefaults (Global tombstone registry for deleted seed records)
+    // 20. HeroSlides (Up to 5 Homepage Hero Photos with Captions)
+    function isValidHeroSlide(data) {
+      return data.keys().hasAll(['imageUrl', 'caption', 'order', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['imageUrl', 'caption', 'subtitle', 'order', 'createdAt', 'updatedAt']) &&
+        data.imageUrl is string && data.imageUrl.size() >= 1 && data.imageUrl.size() <= 1000 &&
+        data.caption is string && data.caption.size() >= 2 && data.caption.size() <= 220 &&
+        isOptionalString(data, 'subtitle', 120) &&
+        data.order is number && data.order >= 0 && data.order <= 100 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    match /heroSlides/{slideId} {
+      allow get: if isValidId(slideId);
+      allow list: if true;
+      allow create: if isAdmin() && isValidId(slideId) && isValidHeroSlide(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(slideId) && isValidHeroSlide(incoming()) &&
+        incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(slideId);
+    }
+
+    // 21. DeletedDefaults (Global tombstone registry for deleted seed records)
     function isValidDeletedDefault(data) {
       return data.keys().hasAll(['itemId', 'collectionName', 'deletedBy', 'deletedAt']) &&
         data.keys().hasOnly(['itemId', 'collectionName', 'deletedBy', 'deletedAt']) &&

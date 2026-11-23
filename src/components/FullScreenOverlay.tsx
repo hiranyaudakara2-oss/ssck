@@ -89,7 +89,7 @@ export function FullScreenOverlay({
           animate={{ opacity: 1 }}
           exit={prefersReduced ? undefined : { opacity: 0 }}
           transition={{ duration: prefersReduced ? 0 : 0.26, ease: [0.16, 1, 0.3, 1] }}
-          className={`fixed inset-0 ${zIndexClass} flex h-[100dvh] w-full flex-col overflow-hidden bg-[#040816]/[0.96] backdrop-blur-2xl`}
+          className={`fixed inset-0 ${zIndexClass} flex h-[100dvh] w-full flex-col overflow-hidden bg-[#040816]/82 backdrop-blur-xl`}
           role="dialog"
           aria-modal="true"
           aria-label={ariaLabel}
@@ -162,9 +162,23 @@ export function FullScreenOverlay({
             </div>
           </header>
 
-          {/* Internally Scrollable Full-Screen Content Region */}
-          <div className="relative z-10 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-8 sm:py-10">
-            <div className="flex min-h-full w-full flex-col">
+          {/* Internally Scrollable Full-Screen Content Region (clicking outside panel closes modal) */}
+          <div
+            onClick={(e) => {
+              if (!disableClose && e.target === e.currentTarget) {
+                onClose();
+              }
+            }}
+            className="relative z-10 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-8 sm:py-10"
+          >
+            <div
+              onClick={(e) => {
+                if (!disableClose && e.target === e.currentTarget) {
+                  onClose();
+                }
+              }}
+              className="flex min-h-full w-full flex-col"
+            >
               <motion.div
                 initial={prefersReduced ? false : { opacity: 0, y: 22, scale: 0.93 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}

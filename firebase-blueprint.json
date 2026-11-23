@@ -11,6 +11,7 @@
         "heroSubtitle": { "type": "string", "minLength": 2, "maxLength": 500 },
         "heroBannerUrl": { "type": "string", "maxLength": 1000 },
         "logoUrl": { "type": "string", "maxLength": 1000 },
+        "floatingWidgetImageUrl": { "type": "string", "maxLength": 1000 },
         "aboutMission": { "type": "string", "minLength": 2, "maxLength": 2000 },
         "aboutVision": { "type": "string", "minLength": 2, "maxLength": 2000 },
         "footerAddress": { "type": "string", "maxLength": 300 },
@@ -104,15 +105,18 @@
       "description": "Scheduled workshop, competition, exhibition, or seminar.",
       "type": "object",
       "properties": {
-        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
-        "category": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "category": { "type": "string", "minLength": 1, "maxLength": 80 },
         "eventDate": { "type": "string", "minLength": 4, "maxLength": 60 },
         "startTime": { "type": "string", "maxLength": 20 },
         "timeLabel": { "type": "string", "maxLength": 60 },
-        "location": { "type": "string", "maxLength": 160 },
+        "location": { "type": "string", "minLength": 1, "maxLength": 160 },
         "description": { "type": "string", "maxLength": 2000 },
         "imageUrl": { "type": "string", "maxLength": 1000 },
         "isUpcoming": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["scheduled", "live", "cancelled", "closed"] },
+        "cancellationReason": { "type": "string", "maxLength": 400 },
+        "liveStreamUrl": { "type": "string", "maxLength": 1000 },
         "registrationLink": { "type": "string", "maxLength": 1000 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -409,6 +413,20 @@
       },
       "required": ["authorUid", "authorName", "authorRole", "body", "createdAt"]
     },
+    "HeroSlide": {
+      "title": "HeroSlide",
+      "description": "Homepage hero featured photo slide with custom text caption (up to 5 photos managed by administrators).",
+      "type": "object",
+      "properties": {
+        "imageUrl": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "caption": { "type": "string", "minLength": 2, "maxLength": 220 },
+        "subtitle": { "type": "string", "maxLength": 120 },
+        "order": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["imageUrl", "caption", "order", "createdAt", "updatedAt"]
+    },
     "DeletedDefault": {
       "title": "DeletedDefault",
       "description": "Tombstone record persisted in Firestore so deletions of default institutional items propagate globally across all visitors.",
@@ -506,6 +524,10 @@
     "/customLinks/{linkId}": {
       "schema": { "$ref": "#/entities/CustomLink" },
       "description": "Administrator-managed interactive links placed in designated site sections."
+    },
+    "/heroSlides/{slideId}": {
+      "schema": { "$ref": "#/entities/HeroSlide" },
+      "description": "Up to 5 featured homepage hero photos with custom text captions managed by administrators."
     },
     "/deletedDefaults/{tombstoneId}": {
       "schema": { "$ref": "#/entities/DeletedDefault" },

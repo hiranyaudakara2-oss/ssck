@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { motion, useReducedMotion, useScroll, useTransform } from 'motion/react';
 import {
   AlertTriangle,
@@ -7,24 +9,24 @@ import {
   Calendar,
   Clock,
   Cpu,
-  Cuboid,
+  ExternalLink,
   FileText,
   GraduationCap,
-  Image as ImageIcon,
   Info,
   MapPin,
   Search,
   Trophy,
   Users,
 } from 'lucide-react';
-import {
-  AchievementUnlockModal,
-  resolveAchievementTier,
-} from '../components/Achievement3DCelebration';
+import { resolveAchievementTier } from '../components/Achievement3DCelebration';
 import { AchievementCard3D } from '../components/AchievementCard3D';
 import { CustomLinksSlot } from '../components/CustomLinksSlot';
-import { EventCountdown } from '../components/EventCountdown';
-import { Hero3DObject } from '../components/Hero3DObject';
+import {
+  EventCountdown,
+  formatColomboDateLabel,
+  resolveEffectiveEventStatus,
+} from '../components/EventCountdown';
+import { HeroPhotoShowcase } from '../components/HeroPhotoShowcase';
 import { HoverInfoBox } from '../components/HoverInfoBox';
 import {
   AnimatedCounter,
@@ -34,60 +36,26 @@ import {
   SafeImage,
   TiltCard,
 } from '../components/MotionPrimitives';
-import { Robotics3DShowcase } from '../components/Robotics3DShowcase';
-import { Scroll3DShowcase } from '../components/Scroll3DShowcase';
 import { SectionEmptyState } from '../components/SectionEmptyState';
 import { useData } from '../context/DataContext';
-import { HERO_CAMPUS_IMAGE } from '../data/seedDefaults';
 import { useUnlockedAchievements } from '../hooks/useUnlockedAchievements';
 import type { PageRoute } from '../types';
+
+gsap.registerPlugin(ScrollTrigger);
 
 interface HomePageProps {
   onNavigate: (route: PageRoute, subjectId?: string) => void;
   onOpenSearch?: () => void;
   defer3D?: boolean;
+  revealReady?: boolean;
 }
 
-function Lazy3DViewport({
-  disabled = false,
-  minHeight = '520px',
-  children,
-}: {
-  disabled?: boolean;
-  minHeight?: string;
-  children: React.ReactNode;
-}) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const [activated, setActivated] = useState(false);
-
-  useEffect(() => {
-    if (disabled || activated) return;
-    const el = hostRef.current;
-    if (!el || typeof IntersectionObserver === 'undefined') {
-      setActivated(true);
-      return;
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          setActivated(true);
-          io.disconnect();
-        }
-      },
-      { rootMargin: '500px 0px' }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [disabled, activated]);
-
-  return (
-    <div ref={hostRef} style={!activated ? { minHeight } : undefined}>
-      {activated ? children : null}
-    </div>
-  );
-}
-
-export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePageProps) {
+export function HomePage({
+  onNavigate,
+  onOpenSearch,
+  defer3D = false,
+  revealReady = true,
+}: HomePageProps) {
   const {
     user,
     siteSettings,
@@ -103,18 +71,17 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
 
   const {
     unlockedIds,
-    celebratingAchievement,
-    unlockAndCelebrate,
-    dismissCelebration,
+    toggleUnlock,
   } = useUnlockedAchievements(achievements, user?.uid);
 
-  const [heroView, setHeroView] = useState<'3d' | 'campus'>('3d');
   const [annCategoryFilter, setAnnCategoryFilter] = useState<'all' | 'urgent' | 'important' | 'general'>('all');
   const [annYearFilter, setAnnYearFilter] = useState<string>('all');
   const [eventCategoryFilter, setEventCategoryFilter] = useState<string>('all');
   const [eventYearFilter, setEventYearFilter] = useState<string>('all');
   const prefersReduced = useReducedMotion();
+  const pageRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLElement>(null);
+  const hasPlayedHeroIntroRef = useRef(false);
   const { scrollYProgress: heroScroll } = useScroll({
     target: heroRef,
     offset: ['start start', 'end start'],
@@ -122,6 +89,93 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
   const heroRotateX = useTransform(heroScroll, [0, 1], [0, 7]);
   const heroScale = useTransform(heroScroll, [0, 1], [1, 0.96]);
   const heroY = useTransform(heroScroll, [0, 1], [0, 26]);
+
+  // Stagger-animate hero elements as the preloader curtain clears
+  useLayoutEffect(() => {
+    const root = pageRef.current;
+    if (!root) return;
+
+    const ctx = gsap.context(() => {
+      if (prefersReduced) {
+        gsap.set('.hero-stagger, .hero-kpi-card', {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          clearProps: 'transform,opacity',
+        });
+        return;
+      }
+
+      if (!revealReady && !hasPlayedHeroIntroRef.current) {
+        gsap.set('.hero-stagger', { opacity: 0, y: 28 });
+        gsap.set('.hero-kpi-card', { opacity: 0, y: 20 });
+        return;
+      }
+
+      if (!hasPlayedHeroIntroRef.current) {
+        hasPlayedHeroIntroRef.current = true;
+        const introTl = gsap.timeline({
+          onComplete: () => {
+            ScrollTrigger.refresh();
+          },
+        });
+
+        introTl
+          .fromTo(
+            '.hero-stagger',
+            { opacity: 0, y: 28 },
+            {
+              opacity: 1,
+              y: 0,
+              duration: 0.85,
+              stagger: 0.08,
+              ease: 'power3.out',
+              clearProps: 'transform',
+            }
+          )
+          .fromTo(
+            '.hero-kpi-card',
+            { opacity: 0, y: 20 },
+            {
+              opacity: 1,
+              y: 0,
+              duration: 0.65,
+              stagger: 0.07,
+              ease: 'power3.out',
+              clearProps: 'transform',
+            },
+            '-=0.45'
+          );
+      }
+    }, root);
+
+    return () => ctx.revert();
+  }, [prefersReduced, revealReady]);
+
+  // Register ScrollTrigger reveals once page sections mount
+  useLayoutEffect(() => {
+    const root = pageRef.current;
+    if (!root || prefersReduced) return;
+
+    const ctx = gsap.context(() => {
+      gsap.utils.toArray<HTMLElement>('.gsap-scroll-band').forEach((band) => {
+        gsap.from(band, {
+          opacity: 0,
+          y: 34,
+          duration: 0.85,
+          ease: 'power3.out',
+          clearProps: 'transform',
+          scrollTrigger: {
+            trigger: band,
+            start: 'top 86%',
+            once: true,
+          },
+        });
+      });
+    }, root);
+
+    return () => ctx.revert();
+  }, [prefersReduced]);
 
   const announcementYears = useMemo(() => {
     const years = new Set(['2024', '2025', '2026', '2027', '2028']);
@@ -167,7 +221,8 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
   const upcomingEvents = useMemo(() => {
     return events
       .filter((e) => {
-        if (!e.isUpcoming) return false;
+        const eff = resolveEffectiveEventStatus(e);
+        if (eff !== 'live' && eff !== 'scheduled') return false;
         const matchesCat =
           eventCategoryFilter === 'all' ||
           e.category?.trim().toLowerCase() === eventCategoryFilter.toLowerCase();
@@ -209,7 +264,7 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
   };
 
   return (
-    <div className="relative overflow-x-clip">
+    <div ref={pageRef} data-defer-3d={defer3D ? 'true' : 'false'} className="relative overflow-x-clip">
       {/* Hero Section */}
       <section
         ref={heroRef}
@@ -221,12 +276,12 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
           <div className="grid items-stretch gap-10 lg:grid-cols-12 lg:gap-12">
             {/* Left Copy Column */}
             <div className="flex flex-col justify-center lg:col-span-6">
-              <p className="text-sm font-medium text-blue-300">
+              <p className="hero-stagger text-sm font-medium text-blue-300">
                 {siteSettings.tagline}
               </p>
 
               <h1
-                className="font-display mt-4 font-bold tracking-tight text-white"
+                className="hero-stagger font-display mt-4 font-bold tracking-tight text-white"
                 style={{
                   fontSize: 'clamp(2.25rem, 4vw, 3.65rem)',
                   lineHeight: 1.08,
@@ -236,11 +291,11 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
                 {siteSettings.heroTitle}
               </h1>
 
-              <p className="mt-6 max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">
-                Journey into the SSCK Technology Section—where scientific exploration meets engineering creativity across six core technology disciplines. Celebrating student projects, innovations, and competition milestones, we inspire young minds, nurture teamwork and practical skills, and empower future innovators to build a smarter, sustainable world.
+              <p className="hero-stagger mt-6 max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">
+                Journey into the SSCK Technology Section, where science meets engineering across six core disciplines. Celebrating student innovation and competition milestones, we nurture practical skills to empower future innovators for a smarter, sustainable world.
               </p>
 
-              <div className="mt-9 flex flex-wrap items-center gap-4">
+              <div className="hero-stagger mt-9 flex flex-wrap items-center gap-4">
                 <HoverInfoBox
                   className="inline-block"
                   title="Explore Academic Curriculum"
@@ -288,7 +343,7 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
             </div>
 
             {/* Right Interactive 3D Gyroscope + Campus Visual Column with Scroll Depth Parallax */}
-            <div className="relative lg:col-span-6" style={{ perspective: '1200px' }}>
+            <div className="hero-stagger relative lg:col-span-6" style={{ perspective: '1200px' }}>
               <motion.div
                 style={
                   prefersReduced
@@ -301,73 +356,7 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
                 }
                 className="relative h-full min-h-[340px] overflow-hidden rounded-2xl border border-blue-500/25 bg-gradient-to-b from-[#0b1533] via-[#070d1f] to-[#050914] will-change-transform sm:min-h-[390px]"
               >
-                {/* Top-Right Compact Mode Switcher (No backdrop-filter over WebGL) */}
-                <div className="absolute right-4 top-4 z-20 inline-flex items-center gap-1 rounded-xl border border-white/15 bg-[#070d1e]/92 p-1">
-                  <button
-                    type="button"
-                    onClick={() => setHeroView('3d')}
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
-                      heroView === '3d'
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                    }`}
-                  >
-                    <Cuboid className="h-3.5 w-3.5" />
-                    <span>3D Gyro</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setHeroView('campus')}
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
-                      heroView === 'campus'
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                    }`}
-                  >
-                    <ImageIcon className="h-3.5 w-3.5" />
-                    <span>Campus</span>
-                  </button>
-                </div>
-
-                {heroView === '3d' ? (
-                  <div className="relative flex h-[340px] w-full flex-col justify-between sm:h-[400px]">
-                    {!defer3D ? (
-                      <Hero3DObject className="h-full w-full" />
-                    ) : (
-                      <div className="h-full w-full bg-gradient-to-br from-blue-950/40 via-[#070d1f] to-violet-950/30" />
-                    )}
-                    <div className="pointer-events-none absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[#050914] via-[#050914]/70 to-transparent p-6">
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-blue-300">
-                        <span>Interactive 3D Core</span>
-                        <span aria-hidden="true">·</span>
-                        <span>Drag to Orbit · Click to Energize</span>
-                      </div>
-                      <p className="font-display mt-1.5 text-lg font-semibold text-white">
-                        SSCK TECH Quantum & Mechatronics Telemetry
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="relative h-[340px] w-full sm:h-[400px]">
-                    <SafeImage
-                      src={siteSettings.heroBannerUrl || HERO_CAMPUS_IMAGE}
-                      alt="School Technology Section Innovation Center"
-                      fallbackLabel={siteSettings.siteTitle}
-                      className="h-full w-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#050914]/90 via-[#050914]/25 to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 p-6">
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
-                        <span>Applied Laboratories</span>
-                        <span aria-hidden="true">·</span>
-                        <span>SFT · ET · ICT · BST · Agriculture · Geography</span>
-                      </div>
-                      <p className="font-display mt-1.5 text-lg font-semibold text-white">
-                        Interdisciplinary Engineering & Bio-Systems Campus
-                      </p>
-                    </div>
-                  </div>
-                )}
+                <HeroPhotoShowcase />
               </motion.div>
             </div>
           </div>
@@ -375,6 +364,7 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
           {/* Full-Width Animated KPI Strip */}
           <div className="mt-14 grid grid-cols-2 gap-4 border-t border-white/10 pt-10 md:grid-cols-4 md:gap-8">
             <HoverInfoBox
+              className="hero-kpi-card h-full"
               title="Technology Students"
               badge="ET & BST Cohort"
               description="Active students enrolled across Engineering Technology and Bio Systems Technology streams."
@@ -393,6 +383,7 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
             </HoverInfoBox>
 
             <HoverInfoBox
+              className="hero-kpi-card h-full"
               title="Engineering & Research Prototypes"
               badge="Innovation Index"
               description="Hardware controllers, automation rigs, and digital systems engineered inside our laboratories."
@@ -408,6 +399,7 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
             </HoverInfoBox>
 
             <HoverInfoBox
+              className="hero-kpi-card h-full"
               title="Institutional Honors & Medals"
               badge="Awards Record"
               description="National engineering competitions, science fairs, and international robotics medals."
@@ -423,6 +415,7 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
             </HoverInfoBox>
 
             <HoverInfoBox
+              className="hero-kpi-card h-full"
               title="University Qualification Benchmark"
               badge="Academic Excellence"
               description="Percentage of technology stream graduates qualifying for engineering and applied science faculties."
@@ -440,13 +433,10 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
         </div>
       </section>
 
-      {/* Scroll-Driven 3D Engineering Showcase */}
-      <Lazy3DViewport disabled={defer3D} minHeight="560px">
-        <Scroll3DShowcase onNavigate={onNavigate} />
-      </Lazy3DViewport>
+
 
       {/* Featured Technology Subjects */}
-      <section className="relative overflow-hidden py-16 sm:py-24">
+      <section className="gsap-scroll-band relative overflow-hidden py-16 sm:py-24">
         <MorphingBackdrop variant="section" />
         <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <RevealBlock className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
@@ -516,7 +506,10 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
       </section>
 
       {/* Latest Announcements & Upcoming Events */}
-      <section className="border-y border-white/10 bg-[#080f23]/45 py-16 sm:py-24">
+      <section
+        id="latest-announcements-section"
+        className="gsap-scroll-band border-y border-white/10 bg-[#080f23]/45 py-16 sm:py-24"
+      >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid gap-12 lg:grid-cols-12">
             {/* Announcements Column */}
@@ -671,42 +664,67 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
                     }
                   />
                 ) : (
-                  upcomingEvents.map((ev) => (
-                    <RevealBlock key={ev.id}>
-                      <article
-                        onClick={() => onNavigate('events')}
-                        className="glass-surface group cursor-pointer rounded-xl p-5 transition-colors hover:border-blue-400/40"
-                      >
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                          <span className="font-semibold text-blue-300">{ev.category}</span>
-                          <span aria-hidden="true">·</span>
-                          <span className="inline-flex items-center gap-1 font-mono tabular-nums">
-                            <Calendar className="h-3.5 w-3.5" />
-                            {ev.eventDate}
-                          </span>
-                          {ev.timeLabel && (
-                            <>
+                  upcomingEvents.map((ev) => {
+                    const effStatus = resolveEffectiveEventStatus(ev);
+                    const actionHref = ev.liveStreamUrl?.trim() || ev.registrationLink?.trim();
+                    return (
+                      <RevealBlock key={ev.id}>
+                        <article
+                          className={`glass-surface rounded-xl p-5 transition-colors ${
+                            effStatus === 'live'
+                              ? 'border-[#00FFFF]/50 shadow-[0_0_24px_rgba(0,255,255,0.12)]'
+                              : 'hover:border-[#00FFFF]/35'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold text-[#FFD700]">{ev.category}</span>
                               <span aria-hidden="true">·</span>
-                              <span>{ev.timeLabel}</span>
-                            </>
-                          )}
-                        </div>
-                        <h3 className="font-display mt-2 text-lg font-semibold text-white group-hover:text-blue-200">
-                          {ev.title}
-                        </h3>
-                        <p className="mt-1.5 line-clamp-2 text-sm text-slate-300">
-                          {ev.description}
-                        </p>
-                        <div className="mt-3.5">
-                          <EventCountdown event={ev} variant="compact" />
-                        </div>
-                        <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-400">
-                          <MapPin className="h-3.5 w-3.5 text-blue-400" />
-                          <span>{ev.location}</span>
-                        </div>
-                      </article>
-                    </RevealBlock>
-                  ))
+                              <span className="inline-flex items-center gap-1 font-mono tabular-nums text-slate-300">
+                                <Calendar className="h-3.5 w-3.5 text-[#00FFFF]" />
+                                {formatColomboDateLabel(ev.eventDate, ev.startTime, ev.timeLabel)}
+                              </span>
+                            </div>
+                            {effStatus === 'live' ? (
+                              <span className="font-mono text-[10px] font-bold tracking-wider text-[#00FFFF] uppercase">
+                                ● LIVE NOW
+                              </span>
+                            ) : (
+                              <span className="font-mono text-[10px] font-semibold tracking-wider text-[#00FFFF]/85 uppercase">
+                                UPCOMING
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="font-display mt-2 text-lg font-semibold text-white">
+                            {ev.title}
+                          </h3>
+                          <p className="mt-1.5 line-clamp-2 text-sm text-slate-300">
+                            {ev.description}
+                          </p>
+                          <div className="mt-3.5">
+                            <EventCountdown event={ev} variant="compact" />
+                          </div>
+                          <div className="mt-3 flex items-center justify-between gap-2 text-xs text-slate-400">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <MapPin className="h-3.5 w-3.5 shrink-0 text-[#FFD700]" />
+                              <span className="truncate">{ev.location}</span>
+                            </span>
+                            {actionHref && (
+                              <a
+                                href={actionHref}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex shrink-0 items-center gap-1 font-semibold text-[#00FFFF] transition-colors hover:text-white"
+                              >
+                                <span>{ev.liveStreamUrl?.trim() ? 'Join Live' : 'Register'}</span>
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                          </div>
+                        </article>
+                      </RevealBlock>
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -714,13 +732,8 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
         </div>
       </section>
 
-      {/* Interactive 3D Robotic Calibration Studio Animation */}
-      <Lazy3DViewport disabled={defer3D} minHeight="560px">
-        <Robotics3DShowcase onNavigate={onNavigate} />
-      </Lazy3DViewport>
-
       {/* Featured Student Projects & Recent Achievements */}
-      <section className="py-16 sm:py-24">
+      <section className="gsap-scroll-band py-16 sm:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <RevealBlock className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div>
@@ -749,16 +762,13 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
                   description={project.technicalDetails || project.summary}
                   icon={<Cpu className="h-3.5 w-3.5" />}
                 >
-                  <TiltCard
-                    onClick={() => onNavigate('projects')}
-                    className="flex h-full flex-col overflow-hidden"
-                  >
+                  <TiltCard className="group flex h-full flex-col overflow-hidden">
                     <div className="aspect-[4/3] w-full overflow-hidden">
                       <SafeImage
                         src={project.imageUrl}
                         alt={project.title}
                         fallbackLabel={project.title}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                       />
                     </div>
                     <div className="flex flex-1 flex-col p-6">
@@ -772,10 +782,23 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
                       <h3 className="font-display mt-2 text-lg font-semibold text-white">
                         {project.title}
                       </h3>
-                      <p className="mt-2 flex-1 text-sm leading-relaxed text-slate-300">
+                      <p className="mt-2 flex-1 line-clamp-3 text-sm leading-relaxed text-slate-300">
                         {project.summary}
                       </p>
-                      <p className="mt-4 text-xs text-slate-400">Team: {project.studentTeam}</p>
+                      <div className="mt-4 flex items-center justify-between gap-2 border-t border-white/10 pt-3 text-xs text-slate-400">
+                        <span className="truncate">Team: {project.studentTeam}</span>
+                        {project.demoUrl && (
+                          <a
+                            href={project.demoUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex shrink-0 items-center gap-1 font-semibold text-blue-300 transition-colors hover:text-white"
+                          >
+                            <span>Demo</span>
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </TiltCard>
                 </HoverInfoBox>
@@ -838,17 +861,11 @@ export function HomePage({ onNavigate, onOpenSearch, defer3D = false }: HomePage
                   achievement={ach}
                   index={idx}
                   isUnlocked={unlockedIds.includes(ach.id)}
-                  onUnlockOrCelebrate={unlockAndCelebrate}
-                  onNavigateCard={() => onNavigate('achievements')}
+                  onUnlockOrCelebrate={toggleUnlock}
                 />
               ))}
             </div>
           </div>
-
-          <AchievementUnlockModal
-            achievement={celebratingAchievement}
-            onClose={dismissCelebration}
-          />
 
           <CustomLinksSlot
             targetSection="home-showcase"

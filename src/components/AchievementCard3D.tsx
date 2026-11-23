@@ -58,7 +58,6 @@ interface AchievementCard3DProps {
   index?: number;
   isUnlocked?: boolean;
   onUnlockOrCelebrate: (achievement: Achievement) => void;
-  onNavigateCard?: () => void;
 }
 
 export function AchievementCard3D({
@@ -66,7 +65,6 @@ export function AchievementCard3D({
   index = 0,
   isUnlocked = false,
   onUnlockOrCelebrate,
-  onNavigateCard,
 }: AchievementCard3DProps) {
   const prefersReduced = useReducedMotion();
   const cardRef = useRef<HTMLElement>(null);
@@ -129,7 +127,6 @@ export function AchievementCard3D({
         ref={cardRef}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
-        onClick={onNavigateCard}
         style={
           prefersReduced
             ? undefined
@@ -141,8 +138,8 @@ export function AchievementCard3D({
               }
         }
         className={`animated-border-card group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0b132b]/90 ${
-          onNavigateCard ? 'cursor-pointer' : ''
-        } ${hoverState.hovered ? theme.glowClass : ''}`}
+          hoverState.hovered ? theme.glowClass : ''
+        }`}
       >
         {/* Dynamic Tier Gradient Border Overlay on Hover */}
         <div
@@ -221,47 +218,29 @@ export function AchievementCard3D({
             </p>
           )}
 
-          {/* Interactive Unlock / Celebrate Action Footer */}
+          {/* Interactive Unlock Action Footer */}
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-white/10 pt-4">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUnlockOrCelebrate(achievement);
-                }}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
-                  isUnlocked
-                    ? 'border border-emerald-400/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25'
-                    : 'bg-blue-600/20 text-blue-200 hover:bg-blue-600 hover:text-white'
-                }`}
-              >
-                {isUnlocked ? (
-                  <>
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
-                    <span>Unlocked</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-3.5 w-3.5 text-blue-300" />
-                    <span>Unlock</span>
-                  </>
-                )}
-              </button>
-
-              {onNavigateCard && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onNavigateCard();
-                  }}
-                  className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-white/10 hover:text-white whitespace-nowrap shrink-0"
-                >
-                  <span>View Details</span>
-                </button>
+            <button
+              type="button"
+              onClick={() => onUnlockOrCelebrate(achievement)}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                isUnlocked
+                  ? 'border border-emerald-400/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25'
+                  : 'bg-blue-600/20 text-blue-200 hover:bg-blue-600 hover:text-white'
+              }`}
+            >
+              {isUnlocked ? (
+                <>
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
+                  <span>Unlocked</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3.5 w-3.5 text-blue-300" />
+                  <span>Unlock</span>
+                </>
               )}
-            </div>
+            </button>
 
             <span className="font-mono text-[11px] tabular-nums text-slate-400">
               {achievement.year}

@@ -203,6 +203,7 @@ export function SettingsTab() {
     heroSubtitle: siteSettings.heroSubtitle,
     heroBannerUrl: siteSettings.heroBannerUrl || '',
     logoUrl: siteSettings.logoUrl || '',
+    floatingWidgetImageUrl: siteSettings.floatingWidgetImageUrl || '',
     aboutMission: siteSettings.aboutMission,
     aboutVision: siteSettings.aboutVision,
     footerAddress: siteSettings.footerAddress || '',
@@ -234,6 +235,7 @@ export function SettingsTab() {
       heroSubtitle: siteSettings.heroSubtitle,
       heroBannerUrl: siteSettings.heroBannerUrl || '',
       logoUrl: siteSettings.logoUrl || '',
+      floatingWidgetImageUrl: siteSettings.floatingWidgetImageUrl || '',
       aboutMission: siteSettings.aboutMission,
       aboutVision: siteSettings.aboutVision,
       footerAddress: siteSettings.footerAddress || '',
@@ -496,6 +498,12 @@ export function SettingsTab() {
               label="School Logo Image (Optional)"
               value={form.logoUrl}
               onChange={(url) => setForm({ ...form, logoUrl: url })}
+              folder="logos"
+            />
+            <AdminMediaInput
+              label="Bottom-Left Floating Widget Photo"
+              value={form.floatingWidgetImageUrl}
+              onChange={(url) => setForm({ ...form, floatingWidgetImageUrl: url })}
               folder="logos"
             />
           </div>

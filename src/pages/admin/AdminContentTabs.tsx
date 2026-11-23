@@ -1,5 +1,18 @@
 import React, { useMemo, useState } from 'react';
-import { Edit3, ExternalLink, Plus, Trash2 } from 'lucide-react';
+import {
+  Archive,
+  Ban,
+  Edit3,
+  ExternalLink,
+  Play,
+  Plus,
+  RotateCcw,
+  Trash2,
+} from 'lucide-react';
+import {
+  formatColomboDateLabel,
+  resolveEffectiveEventStatus,
+} from '../../components/EventCountdown';
 import { SafeImage } from '../../components/MotionPrimitives';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
 import { useData } from '../../context/DataContext';
@@ -11,6 +24,7 @@ import type {
   AchievementTier,
   CampusEvent,
   DownloadResource,
+  EventStatus,
   GalleryItem,
   Student,
   StudentProject,
@@ -465,6 +479,7 @@ export function EventsAchievementsTab() {
     events,
     achievements,
     saveEvent,
+    updateEventStatus,
     deleteEvent,
     saveAchievement,
     deleteAchievement,
@@ -473,6 +488,9 @@ export function EventsAchievementsTab() {
   const [editEvent, setEditEvent] = useState<Partial<CampusEvent> | null>(null);
   const [editAch, setEditAch] = useState<Partial<Achievement> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  const [cancelTargetEvent, setCancelTargetEvent] = useState<CampusEvent | null>(null);
+  const [cancelReasonInput, setCancelReasonInput] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [eventCategoryFilter, setEventCategoryFilter] = useState<string>('All');
   const [eventYearFilter, setEventYearFilter] = useState<string>('All');
@@ -507,23 +525,58 @@ export function EventsAchievementsTab() {
 
   const hasEventFilters = eventCategoryFilter !== 'All' || eventYearFilter !== 'All';
 
+  const toDateTimeLocalValue = (eventDate?: string, startTime?: string): string => {
+    const safeDate = (eventDate || new Date().toISOString().slice(0, 10)).split('T')[0];
+    const safeTime = /^\d{1,2}:\d{2}$/.test((startTime || '').trim())
+      ? (startTime || '').trim().padStart(5, '0')
+      : '09:00';
+    return `${safeDate}T${safeTime}`;
+  };
+
   const handleSaveEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editEvent) return;
+    const cleanTitle = (editEvent.title || '').trim();
+    const cleanCategory = (editEvent.category || 'Workshop').trim();
+    const cleanDate = (editEvent.eventDate || new Date().toISOString().slice(0, 10)).trim();
+    const cleanLocation = (editEvent.location || '').trim();
+    const chosenStatus: EventStatus =
+      editEvent.status || (editEvent.isUpcoming ? 'scheduled' : 'closed');
+
+    if (!cleanTitle) {
+      setActionError('Please enter a valid event title.');
+      return;
+    }
+    if (!cleanCategory) {
+      setActionError('Please enter an event category.');
+      return;
+    }
+    if (cleanDate.length < 4) {
+      setActionError('Please select a valid event date and time.');
+      return;
+    }
+    if (!cleanLocation) {
+      setActionError('Please enter a valid event venue.');
+      return;
+    }
+
     setSaving(true);
     setActionError(null);
     try {
       await saveEvent({
         id: editEvent.id,
-        title: editEvent.title || '',
-        category: editEvent.category || 'Workshop',
-        eventDate: editEvent.eventDate || new Date().toISOString().slice(0, 10),
+        title: cleanTitle,
+        category: cleanCategory,
+        eventDate: cleanDate,
         startTime: editEvent.startTime || '',
         timeLabel: editEvent.timeLabel || '',
-        location: editEvent.location || '',
+        location: cleanLocation,
         description: editEvent.description || '',
         imageUrl: editEvent.imageUrl || '',
-        isUpcoming: Boolean(editEvent.isUpcoming),
+        isUpcoming: chosenStatus === 'scheduled' || chosenStatus === 'live',
+        status: chosenStatus,
+        cancellationReason: chosenStatus === 'cancelled' ? editEvent.cancellationReason || '' : '',
+        liveStreamUrl: editEvent.liveStreamUrl || '',
         registrationLink: editEvent.registrationLink || '',
       });
       setEditEvent(null);
@@ -533,6 +586,28 @@ export function EventsAchievementsTab() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleQuickStatusChange = async (
+    ev: CampusEvent,
+    nextStatus: EventStatus,
+    reason?: string
+  ) => {
+    setActionError(null);
+    setStatusUpdatingId(ev.id);
+    try {
+      await updateEventStatus(ev, nextStatus, reason);
+      if (cancelTargetEvent?.id === ev.id) {
+        setCancelTargetEvent(null);
+        setCancelReasonInput('');
+      }
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : 'Unable to update event status. Please try again.'
+      );
+    } finally {
+      setStatusUpdatingId(null);
     }
   };
 
@@ -632,6 +707,10 @@ export function EventsAchievementsTab() {
                   startTime: '09:00',
                   location: '',
                   isUpcoming: true,
+                  status: 'scheduled',
+                  cancellationReason: '',
+                  liveStreamUrl: '',
+                  registrationLink: '',
                 });
               } else {
                 setEditAch({
@@ -659,8 +738,17 @@ export function EventsAchievementsTab() {
       {subTab === 'events' && editEvent && (
         <form
           onSubmit={handleSaveEvent}
-          className="space-y-4 rounded-xl border border-blue-500/30 bg-[#0b1328] p-6"
+          className="space-y-4 rounded-xl border border-[#00FFFF]/35 bg-[#081229]/95 p-6 shadow-[0_0_28px_rgba(0,255,255,0.08)]"
         >
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
+            <h3 className="font-display text-base font-semibold text-white">
+              {editEvent.id ? 'Edit Event & Live Schedule' : 'Create New Event'}
+            </h3>
+            <span className="font-mono text-[11px] text-[#00FFFF]">
+              Asia/Colombo (UTC+05:30)
+            </span>
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="sm:col-span-2">
               <label className="block text-xs text-slate-300">Event Title</label>
@@ -670,43 +758,84 @@ export function EventsAchievementsTab() {
                 maxLength={160}
                 value={editEvent.title || ''}
                 onChange={(e) => setEditEvent({ ...editEvent, title: e.target.value })}
+                placeholder="e.g., SSCK Tech Day & Autonomous Robotics Fair"
                 className="mt-1 w-full rounded-lg border border-white/15 bg-[#091022] px-3 py-2 text-sm text-white"
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-300">Category</label>
+              <label className="block text-xs text-slate-300">Category / Stream</label>
               <input
                 type="text"
                 required
                 maxLength={80}
                 value={editEvent.category || ''}
                 onChange={(e) => setEditEvent({ ...editEvent, category: e.target.value })}
+                placeholder="Exhibition, Workshop, Competition..."
                 className="mt-1 w-full rounded-lg border border-white/15 bg-[#091022] px-3 py-2 text-sm text-white"
               />
             </div>
           </div>
+
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <label className="block text-xs text-slate-300">Event Date</label>
+            <div className="lg:col-span-2">
+              <label className="block text-xs text-slate-300">
+                Date &amp; Start Time (Countdown Target)
+              </label>
               <input
-                type="date"
+                type="datetime-local"
                 required
-                value={editEvent.eventDate || ''}
-                onChange={(e) => setEditEvent({ ...editEvent, eventDate: e.target.value })}
-                className="mt-1 w-full rounded-lg border border-white/15 bg-[#091022] px-3 py-2 text-sm text-white"
+                value={toDateTimeLocalValue(editEvent.eventDate, editEvent.startTime)}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  const [dPart, tPart] = raw.split('T');
+                  setEditEvent({
+                    ...editEvent,
+                    eventDate: dPart || editEvent.eventDate || '',
+                    startTime: tPart ? tPart.slice(0, 5) : editEvent.startTime || '09:00',
+                  });
+                }}
+                className="mt-1 w-full rounded-lg border border-[#00FFFF]/30 bg-[#091022] px-3 py-2 text-sm text-white"
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-300">Starting Time (Countdown)</label>
+              <label className="block text-xs text-slate-300">Venue / Location</label>
               <input
-                type="time"
-                value={editEvent.startTime || ''}
-                onChange={(e) => setEditEvent({ ...editEvent, startTime: e.target.value })}
+                type="text"
+                required
+                maxLength={160}
+                value={editEvent.location || ''}
+                onChange={(e) => setEditEvent({ ...editEvent, location: e.target.value })}
+                placeholder="SSCK Main Auditorium"
                 className="mt-1 w-full rounded-lg border border-white/15 bg-[#091022] px-3 py-2 text-sm text-white"
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-300">Display Time Label</label>
+              <label className="block text-xs text-slate-300">Event Status</label>
+              <select
+                value={
+                  editEvent.status || (editEvent.isUpcoming ? 'scheduled' : 'closed')
+                }
+                onChange={(e) => {
+                  const nextStatus = e.target.value as EventStatus;
+                  setEditEvent({
+                    ...editEvent,
+                    status: nextStatus,
+                    isUpcoming: nextStatus === 'scheduled' || nextStatus === 'live',
+                  });
+                }}
+                className="mt-1 w-full rounded-lg border border-[#FFD700]/35 bg-[#091022] px-3 py-2 text-sm text-white"
+              >
+                <option value="scheduled">Scheduled / Upcoming</option>
+                <option value="live">Started / Live Now</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="closed">Closed / Completed</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <label className="block text-xs text-slate-300">Display Time Label (Optional)</label>
               <input
                 type="text"
                 maxLength={60}
@@ -717,17 +846,49 @@ export function EventsAchievementsTab() {
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-300">Location</label>
+              <label className="block text-xs text-slate-300">Live Stream / Join URL (Optional)</label>
               <input
                 type="text"
-                required
-                maxLength={160}
-                value={editEvent.location || ''}
-                onChange={(e) => setEditEvent({ ...editEvent, location: e.target.value })}
+                maxLength={1000}
+                value={editEvent.liveStreamUrl || ''}
+                onChange={(e) => setEditEvent({ ...editEvent, liveStreamUrl: e.target.value })}
+                placeholder="https://..."
+                className="mt-1 w-full rounded-lg border border-white/15 bg-[#091022] px-3 py-2 text-sm text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-300">Registration URL (Optional)</label>
+              <input
+                type="text"
+                maxLength={1000}
+                value={editEvent.registrationLink || ''}
+                onChange={(e) =>
+                  setEditEvent({ ...editEvent, registrationLink: e.target.value })
+                }
+                placeholder="https://..."
                 className="mt-1 w-full rounded-lg border border-white/15 bg-[#091022] px-3 py-2 text-sm text-white"
               />
             </div>
           </div>
+
+          {(editEvent.status === 'cancelled') && (
+            <div>
+              <label className="block text-xs text-rose-300">
+                Cancellation Notice (Shown on Public Card)
+              </label>
+              <input
+                type="text"
+                maxLength={400}
+                value={editEvent.cancellationReason || ''}
+                onChange={(e) =>
+                  setEditEvent({ ...editEvent, cancellationReason: e.target.value })
+                }
+                placeholder="Optional reason for cancellation (e.g., Rescheduled due to weather)"
+                className="mt-1 w-full rounded-lg border border-rose-500/40 bg-rose-950/20 px-3 py-2 text-sm text-white"
+              />
+            </div>
+          )}
+
           <div>
             <label className="block text-xs text-slate-300">Description</label>
             <textarea
@@ -738,44 +899,26 @@ export function EventsAchievementsTab() {
               className="mt-1 w-full rounded-lg border border-white/15 bg-[#091022] px-3 py-2 text-sm text-white"
             />
           </div>
+
           <AdminMediaInput
             label="Event Cover Image"
             value={editEvent.imageUrl || ''}
             onChange={(url) => setEditEvent({ ...editEvent, imageUrl: url })}
             folder="events"
           />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="block text-xs text-slate-300">Registration URL (Optional)</label>
-              <input
-                type="text"
-                maxLength={1000}
-                value={editEvent.registrationLink || ''}
-                onChange={(e) => setEditEvent({ ...editEvent, registrationLink: e.target.value })}
-                className="mt-1 w-full rounded-lg border border-white/15 bg-[#091022] px-3 py-2 text-sm text-white"
-              />
-            </div>
-            <label className="flex items-center gap-2 pt-6 text-xs text-slate-200">
-              <input
-                type="checkbox"
-                checked={Boolean(editEvent.isUpcoming)}
-                onChange={(e) => setEditEvent({ ...editEvent, isUpcoming: e.target.checked })}
-              />
-              <span>Mark as Upcoming Event</span>
-            </label>
-          </div>
+
           <div className="flex gap-3">
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white"
+              className="rounded-lg bg-gradient-to-r from-[#00FFFF]/85 to-blue-600 px-5 py-2 text-xs font-bold text-[#050914] transition-opacity hover:opacity-95 disabled:opacity-50"
             >
-              {saving ? 'Saving...' : 'Save Event'}
+              {saving ? 'Saving to Firestore...' : 'Save & Sync Event'}
             </button>
             <button
               type="button"
               onClick={() => setEditEvent(null)}
-              className="rounded-lg border border-white/15 px-4 py-2 text-xs text-slate-300"
+              className="rounded-lg border border-white/15 px-4 py-2 text-xs text-slate-300 hover:text-white"
             >
               Cancel
             </button>
@@ -979,6 +1122,51 @@ export function EventsAchievementsTab() {
         </div>
       )}
 
+      {subTab === 'events' && cancelTargetEvent && (
+        <div className="rounded-xl border border-rose-500/45 bg-rose-950/30 p-4 backdrop-blur-md">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-rose-200">
+              Cancel Event: <span className="text-white">{cancelTargetEvent.title}</span>
+            </p>
+            <span className="font-mono text-[11px] text-rose-300">Instant Public Sync</span>
+          </div>
+          <div className="mt-3 flex flex-col gap-2.5 sm:flex-row">
+            <input
+              type="text"
+              maxLength={400}
+              value={cancelReasonInput}
+              onChange={(e) => setCancelReasonInput(e.target.value)}
+              placeholder="Optional cancellation reason shown on public cards (e.g., Postponed due to weather)..."
+              className="flex-1 rounded-lg border border-rose-500/35 bg-[#091022] px-3 py-2 text-xs text-white focus:border-rose-400 focus:outline-none"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={statusUpdatingId === cancelTargetEvent.id}
+                onClick={() =>
+                  void handleQuickStatusChange(cancelTargetEvent, 'cancelled', cancelReasonInput)
+                }
+                className="rounded-lg bg-rose-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50 whitespace-nowrap"
+              >
+                {statusUpdatingId === cancelTargetEvent.id
+                  ? 'Cancelling...'
+                  : 'Confirm Cancellation'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCancelTargetEvent(null);
+                  setCancelReasonInput('');
+                }}
+                className="rounded-lg border border-white/15 px-3 py-2 text-xs text-slate-300 hover:text-white"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {subTab === 'events' && filteredEvents.length === 0 ? (
         <SectionEmptyState
           variant="events"
@@ -998,44 +1186,126 @@ export function EventsAchievementsTab() {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-white/10 text-xs text-slate-400">
-                  <th className="px-4 py-3">Event</th>
-                  <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-3">Event &amp; Venue</th>
+                  <th className="px-4 py-3">Date &amp; Time</th>
+                  <th className="px-4 py-3">Live Status</th>
+                  <th className="px-4 py-3">One-Click Status Controls</th>
+                  <th className="px-4 py-3 text-right">Edit / Delete</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {filteredEvents.map((ev) => (
-                  <tr key={ev.id}>
-                    <td className="px-4 py-3 font-medium text-white">{ev.title}</td>
-                    <td className="px-4 py-3 text-xs text-slate-300">{ev.category}</td>
-                    <td className="px-4 py-3 font-mono text-xs tabular-nums text-slate-300">
-                      {ev.eventDate}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-blue-300">
-                      {ev.isUpcoming ? 'Upcoming' : 'Past'}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="inline-flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setEditEvent(ev)}
-                          className="rounded-lg border border-white/10 p-1.5 text-slate-300"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteEvent(ev.id, ev.title)}
-                          className="rounded-lg border border-white/10 p-1.5 text-rose-400"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {filteredEvents.map((ev) => {
+                  const effective = resolveEffectiveEventStatus(ev);
+                  const isBusy = statusUpdatingId === ev.id;
+                  return (
+                    <tr key={ev.id} className="transition-colors hover:bg-white/[0.02]">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-white">{ev.title}</p>
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          <span className="text-[#FFD700]">{ev.category}</span> · {ev.location}
+                        </p>
+                        {effective === 'cancelled' && ev.cancellationReason && (
+                          <p className="mt-1 text-[11px] text-rose-300">
+                            Notice: {ev.cancellationReason}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs tabular-nums text-slate-300 whitespace-nowrap">
+                        {formatColomboDateLabel(ev.eventDate, ev.startTime, ev.timeLabel)}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {effective === 'live' ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-md border border-[#00FFFF]/50 bg-[#042331] px-2 py-0.5 font-mono text-[11px] font-bold text-[#00FFFF]">
+                            <span className="h-1.5 w-1.5 animate-ping rounded-full bg-emerald-400" />
+                            ● LIVE NOW
+                          </span>
+                        ) : effective === 'cancelled' ? (
+                          <span className="inline-flex items-center rounded-md border border-rose-500/40 bg-rose-950/60 px-2 py-0.5 font-mono text-[11px] font-bold text-rose-300">
+                            CANCELLED
+                          </span>
+                        ) : effective === 'closed' ? (
+                          <span className="inline-flex items-center rounded-md border border-[#FFD700]/40 bg-[#141208] px-2 py-0.5 font-mono text-[11px] font-bold text-[#FFD700]">
+                            CLOSED
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-md border border-cyan-500/35 bg-cyan-950/40 px-2 py-0.5 font-mono text-[11px] font-semibold text-cyan-300">
+                            UPCOMING
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={isBusy || ev.status === 'live'}
+                            onClick={() => void handleQuickStatusChange(ev, 'live')}
+                            title="Start Event (Mark Live Now)"
+                            className="inline-flex items-center gap-1 rounded-lg border border-emerald-400/40 bg-emerald-950/40 px-2.5 py-1 text-[11px] font-semibold text-[#00FFFF] transition-colors hover:bg-emerald-900/60 disabled:opacity-40 whitespace-nowrap"
+                          >
+                            <Play className="h-3 w-3" />
+                            <span>Start</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isBusy || ev.status === 'cancelled'}
+                            onClick={() => {
+                              setCancelTargetEvent(ev);
+                              setCancelReasonInput(ev.cancellationReason || '');
+                            }}
+                            title="Cancel Event"
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-950/40 px-2.5 py-1 text-[11px] font-semibold text-rose-300 transition-colors hover:bg-rose-900/60 disabled:opacity-40 whitespace-nowrap"
+                          >
+                            <Ban className="h-3 w-3" />
+                            <span>Cancel</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isBusy || ev.status === 'closed'}
+                            onClick={() => void handleQuickStatusChange(ev, 'closed')}
+                            title="Close / Complete Event"
+                            className="inline-flex items-center gap-1 rounded-lg border border-[#FFD700]/40 bg-[#1a1608]/70 px-2.5 py-1 text-[11px] font-semibold text-[#FFD700] transition-colors hover:bg-[#2a240c] disabled:opacity-40 whitespace-nowrap"
+                          >
+                            <Archive className="h-3 w-3" />
+                            <span>Close</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isBusy || ev.status === 'scheduled'}
+                            onClick={() => void handleQuickStatusChange(ev, 'scheduled')}
+                            title="Reset to Scheduled"
+                            className="inline-flex items-center gap-1 rounded-lg border border-cyan-400/35 bg-cyan-950/35 px-2.5 py-1 text-[11px] font-semibold text-cyan-200 transition-colors hover:bg-cyan-900/50 disabled:opacity-40 whitespace-nowrap"
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            <span>Reset</span>
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <div className="inline-flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditEvent(ev)}
+                            title="Edit Event Details"
+                            className="rounded-lg border border-white/10 p-1.5 text-slate-300 hover:border-[#00FFFF]/40 hover:text-white"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteEvent(ev.id, ev.title)}
+                            title="Delete Event"
+                            className="rounded-lg border border-white/10 p-1.5 text-rose-400 hover:border-rose-400/40"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : (

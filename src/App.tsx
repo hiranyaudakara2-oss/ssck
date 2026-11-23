@@ -9,16 +9,15 @@ import React, {
   useState,
 } from 'react';
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from 'motion/react';
-import { BackgroundMusicPlayer } from './components/BackgroundMusicPlayer';
 import { CinematicLoader } from './components/CinematicLoader';
 import { CommandSearchModal } from './components/CommandSearchModal';
 import { CustomCursor } from './components/CustomCursor';
+import { FloatingAnnouncementWidget } from './components/FloatingAnnouncementWidget';
 import { Footer } from './components/Footer';
 import { HeroParticleBackground } from './components/HeroParticleBackground';
 import { Navbar } from './components/Navbar';
 import { ScrollProgressBar } from './components/ScrollProgressBar';
 import { DataProvider, useData } from './context/DataContext';
-import { MusicProvider, useMusic } from './context/MusicContext';
 import {
   ENGINEERING_LAB_IMAGE,
   HERO_CAMPUS_IMAGE,
@@ -261,9 +260,9 @@ function AppShell() {
     teachers,
     subjects,
   } = useData();
-  const { setRouteSuspended } = useMusic();
   const prefersReduced = useReducedMotion();
   const [showLoader, setShowLoader] = useState(true);
+  const [heroRevealReady, setHeroRevealReady] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [navState, setNavState] = useState<{ route: PageRoute; subjectId: string | null }>(() =>
     parseRouteFromLocation()
@@ -377,10 +376,6 @@ function AppShell() {
       window.clearTimeout(timerId);
     };
   }, [showLoader, prefetchRoute]);
-
-  useEffect(() => {
-    setRouteSuspended(navState.route === 'history');
-  }, [navState.route, setRouteSuspended]);
 
   // Prevent browser auto scroll restoration on Back/Forward so every page opens cleanly at y=0
   useEffect(() => {
@@ -504,6 +499,7 @@ function AppShell() {
             onNavigate={navigate}
             onOpenSearch={() => setSearchOpen(true)}
             defer3D={showLoader}
+            revealReady={heroRevealReady || !showLoader}
           />
         );
       case 'about':
@@ -545,6 +541,7 @@ function AppShell() {
             onNavigate={navigate}
             onOpenSearch={() => setSearchOpen(true)}
             defer3D={showLoader}
+            revealReady={heroRevealReady || !showLoader}
           />
         );
     }
@@ -565,7 +562,11 @@ function AppShell() {
         <CinematicLoader
           siteTitle={siteSettings.siteTitle}
           logoUrl={siteSettings.logoUrl}
-          onComplete={() => setShowLoader(false)}
+          onRevealStart={() => setHeroRevealReady(true)}
+          onComplete={() => {
+            setHeroRevealReady(true);
+            setShowLoader(false);
+          }}
         />
       )}
 
@@ -614,6 +615,13 @@ function AppShell() {
         </div>
       </main>
 
+      {!showLoader &&
+        !hasOpenModal &&
+        navState.route !== 'admin' &&
+        !(Boolean(siteSettings.maintenanceMode) && !isAdmin && !adminAuthenticated) && (
+          <FloatingAnnouncementWidget onNavigate={navigate} />
+        )}
+
       {navState.route !== 'admin' && <Footer onNavigate={navigate} onPrefetch={prefetchRoute} />}
     </div>
   );
@@ -624,9 +632,7 @@ export default function App() {
     <AppErrorBoundary>
       <MotionConfig reducedMotion="user">
         <DataProvider>
-          <MusicProvider>
-            <AppShell />
-          </MusicProvider>
+          <AppShell />
         </DataProvider>
       </MotionConfig>
     </AppErrorBoundary>

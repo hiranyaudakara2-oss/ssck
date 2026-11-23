@@ -38,10 +38,12 @@ import {
 import { AdminCommunityMembersTab } from './AdminCommunityMembersTab';
 import { AnnouncementsTab, OverviewTab, SettingsTab, SubjectsTab } from './AdminCoreTabs';
 import { CommunityModerationTab, CustomLinksTab, HistoryTab } from './AdminFeatureTabs';
+import { AdminHeroSlidesTab } from './AdminHeroSlidesTab';
 
 type AdminTabId =
   | 'overview'
   | 'settings'
+  | 'hero-slides'
   | 'subjects'
   | 'directory'
   | 'announcements'
@@ -58,6 +60,7 @@ type AdminTabId =
 const ADMIN_TABS: { id: AdminTabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'overview', label: 'Analytics & Logs', icon: BarChart3 },
   { id: 'settings', label: 'Website Settings', icon: Globe },
+  { id: 'hero-slides', label: 'Hero Photos (5)', icon: ImageIcon },
   { id: 'directory', label: 'Manage Community Members', icon: Crown },
   { id: 'subjects', label: 'Subjects', icon: BookOpen },
   { id: 'announcements', label: 'Announcements', icon: Megaphone },
@@ -415,6 +418,7 @@ export function AdminDashboardPage({ onNavigate }: { onNavigate: (route: PageRou
 
           {activeTab === 'overview' && <OverviewTab />}
           {activeTab === 'settings' && <SettingsTab />}
+          {activeTab === 'hero-slides' && <AdminHeroSlidesTab />}
           {activeTab === 'directory' && <AdminCommunityMembersTab />}
           {activeTab === 'subjects' && <SubjectsTab />}
           {activeTab === 'announcements' && <AnnouncementsTab />}

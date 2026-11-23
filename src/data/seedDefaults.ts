@@ -6,6 +6,7 @@ import type {
   DownloadResource,
   ExecutivePosition,
   GalleryItem,
+  HeroSlide,
   HistoryMilestone,
   SiteSettings,
   Student,
@@ -29,6 +30,9 @@ export const HISTORY_AI_ROBOTICS_IMAGE = '/assets/images/history_ai_robotics_179
 export const DEFAULT_WEB_LOGO =
   '/assets/aistudio/20250218_125255_0000__2_-removebg-preview_f1038a4a.png';
 
+export const HISTORY_SCROLL_AUDIO_URL =
+  '/assets/aistudio/nastelbom-pirates-437941_fda2f939.mp3';
+
 export const DEFAULT_SITE_SETTINGS: Omit<SiteSettings, 'updatedAt' | 'updatedBy'> = {
   siteTitle: 'SSCK TECH',
   tagline: 'SSCK TECH · School Technology Section · Applied Science, Engineering & Computing',
@@ -37,6 +41,7 @@ export const DEFAULT_SITE_SETTINGS: Omit<SiteSettings, 'updatedAt' | 'updatedBy'
     'SSCK TECH is a vibrant technology community that inspires young minds through science, engineering, and innovation. We promote creativity, teamwork, and practical learning while developing skills to explore new ideas and build a smarter, sustainable future.',
   heroBannerUrl: HERO_CAMPUS_IMAGE,
   logoUrl: DEFAULT_WEB_LOGO,
+  floatingWidgetImageUrl: DEFAULT_WEB_LOGO,
   aboutMission:
     'To cultivate technically fluent problem-solvers who bridge theoretical science with real-world engineering, sustainable bio-systems, and ethical computing through hands-on laboratory mastery.',
   aboutVision:
@@ -312,6 +317,7 @@ export const DEFAULT_EVENTS: Omit<CampusEvent, 'createdAt' | 'updatedAt'>[] = [
       'Flagship annual showcase featuring 45+ live student engineering prototypes, autonomous rovers, smart farming pods, and GIS spatial demonstrations open to parents and partner universities.',
     imageUrl: HERO_CAMPUS_IMAGE,
     isUpcoming: true,
+    status: 'scheduled',
     registrationLink: '',
   },
   {
@@ -326,6 +332,7 @@ export const DEFAULT_EVENTS: Omit<CampusEvent, 'createdAt' | 'updatedAt'>[] = [
       'Hands-on field flight calibration and orthomosaic terrain processing session for Grade 12 & 13 Geography and Agriculture students.',
     imageUrl: AGRI_GEO_IMAGE,
     isUpcoming: true,
+    status: 'scheduled',
     registrationLink: '',
   },
   {
@@ -340,6 +347,7 @@ export const DEFAULT_EVENTS: Omit<CampusEvent, 'createdAt' | 'updatedAt'>[] = [
       'Eight-hour design-build challenge where student teams engineered line-following load carriers using laser-cut chassis and PID motor controllers.',
     imageUrl: ENGINEERING_LAB_IMAGE,
     isUpcoming: false,
+    status: 'closed',
     registrationLink: '',
   },
 ];
@@ -821,4 +829,43 @@ export const DEFAULT_COMMUNITY_DIRECTORY: Omit<
     order: 20,
   },
 ];
+
+export const DEFAULT_HERO_SLIDES: Omit<HeroSlide, 'createdAt' | 'updatedAt'>[] = [
+  {
+    id: 'hero-slide-1',
+    imageUrl: HERO_CAMPUS_IMAGE,
+    subtitle: 'Applied Laboratories · SFT · ET · ICT · BST',
+    caption: 'Interdisciplinary Engineering & Bio-Systems Campus',
+    order: 1,
+  },
+  {
+    id: 'hero-slide-2',
+    imageUrl: ENGINEERING_LAB_IMAGE,
+    subtitle: 'Engineering Technology · CNC & Mechatronics',
+    caption: 'Precision Fabrication, CAD Design & Robotics Prototyping Bay',
+    order: 2,
+  },
+  {
+    id: 'hero-slide-3',
+    imageUrl: ICT_STUDIO_IMAGE,
+    subtitle: 'ICT & Applied Computing Studio',
+    caption: 'Full-Stack Software Engineering, Embedded IoT & Cloud Systems',
+    order: 3,
+  },
+  {
+    id: 'hero-slide-4',
+    imageUrl: SCIENCE_BIO_IMAGE,
+    subtitle: 'Bio Systems & Analytical Science Lab',
+    caption: 'Sterile Tissue Culture, Bioprocess & Environmental Telemetry',
+    order: 4,
+  },
+  {
+    id: 'hero-slide-5',
+    imageUrl: AGRI_GEO_IMAGE,
+    subtitle: 'Smart Agriculture & Geospatial Lab',
+    caption: 'Autonomous Greenhouse Irrigation & Precision GIS Field Mapping',
+    order: 5,
+  },
+];
+
 

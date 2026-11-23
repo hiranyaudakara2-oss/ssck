@@ -235,7 +235,7 @@ export function SubjectsPage({ selectedSubjectId, onSelectSubject, onNavigate }:
             Technology Section Subjects
           </h1>
           <p className="mt-4 text-base leading-relaxed text-slate-300">
-            Select any subject below to explore curriculum modules, faculty coordinators, laboratory equipment, and downloadable syllabi or past papers.
+            Presented below is a concise overview of the subjects offered within the Technology stream, along with their respective descriptions.
           </p>
           <CustomLinksSlot targetSection="subjects" onNavigate={onNavigate} />
         </RevealBlock>

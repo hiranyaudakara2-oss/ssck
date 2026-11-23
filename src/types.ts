@@ -38,6 +38,7 @@ export interface SiteSettings {
   heroSubtitle: string;
   heroBannerUrl?: string;
   logoUrl?: string;
+  floatingWidgetImageUrl?: string;
   aboutMission: string;
   aboutVision: string;
   footerAddress?: string;
@@ -100,6 +101,8 @@ export interface Student {
   updatedAt?: Timestamp;
 }
 
+export type EventStatus = 'scheduled' | 'live' | 'cancelled' | 'closed';
+
 export interface CampusEvent {
   id: string;
   title: string;
@@ -111,6 +114,9 @@ export interface CampusEvent {
   description?: string;
   imageUrl?: string;
   isUpcoming: boolean;
+  status?: EventStatus;
+  cancellationReason?: string;
+  liveStreamUrl?: string;
   registrationLink?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
@@ -361,4 +367,14 @@ export interface CommunityLike {
   id: string;
   uid: string;
   createdAt?: Timestamp;
+}
+
+export interface HeroSlide {
+  id: string;
+  imageUrl: string;
+  caption: string;
+  subtitle?: string;
+  order: number;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
 }

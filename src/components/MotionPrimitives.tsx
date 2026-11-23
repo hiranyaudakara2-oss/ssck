@@ -132,13 +132,29 @@ export function TiltCard({
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
       style={{
         transform: prefersReduced
           ? undefined
           : `perspective(1000px) translate3d(0, ${isHovered ? -4 : 0}px, 0) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg)`,
         transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 260ms ease',
       }}
-      className={`animated-border-card ${onClick ? 'cursor-pointer' : ''} ${className}`}
+      className={`animated-border-card ${
+        onClick
+          ? 'cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400'
+          : ''
+      } ${className}`}
     >
       {children}
     </div>

@@ -59,19 +59,7 @@ export function AnnouncementNotificationDropdown({ onNavigate }: { onNavigate: (
 
   return (
     <div className="relative" ref={dropdownRef}>
-      <button
-        type="button"
-        onClick={handleToggle}
-        className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white transition-all focus-visible:outline-2 focus-visible:outline-cyan-400"
-        aria-label="Announcements & Notifications"
-      >
-        <Bell className="h-4 w-4" />
-        {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white shadow-lg shadow-blue-600/50 animate-pulse">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        )}
-      </button>
+      {/* Header notification bell button deleted per user request */}
 
       <AnimatePresence>
         {open && (

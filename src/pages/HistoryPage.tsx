@@ -223,7 +223,7 @@ export function HistoryPage({
             <button
               type="button"
               onClick={handleTogglePresentation}
-              aria-label={isAutoScrollEnabled ? 'Pause auto-scroll and music' : 'Play auto-scroll and music'}
+              aria-label={isAutoScrollEnabled ? 'Pause scroll and audio' : 'Play scroll and audio'}
               className={`inline-flex min-h-[38px] items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-semibold text-white transition-colors duration-200 whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400 ${
                 isAutoScrollEnabled
                   ? 'bg-amber-600 hover:bg-amber-500'
@@ -235,7 +235,9 @@ export function HistoryPage({
               ) : (
                 <Play className="h-3.5 w-3.5" />
               )}
-              <span>{isAutoScrollEnabled ? 'Pause' : hasStartedOnce ? 'Resume' : 'Play'}</span>
+              <span>
+                {isAutoScrollEnabled ? 'Pause Scroll' : hasStartedOnce ? 'Resume Scroll' : 'Play Scroll'}
+              </span>
             </button>
 
             <div className="hidden items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] p-0.5 sm:flex">
@@ -327,7 +329,7 @@ export function HistoryPage({
                   The History of SSCK Technology Section
                 </h1>
                 <p className="mt-4 max-w-3xl text-base leading-relaxed text-slate-300">
-                  Discover the journey of the SSCK Technology Section — from its beginnings as a school-based technology learning community to its growth into a place of scientific exploration, engineering creativity, and technological innovation. Explore the development of Science for Technology, Engineering Technology, Information and Communication Technology, Bio Systems Technology, Geography, and Agricultural Technology. Celebrate the achievements, projects, competitions, innovations, and dedicated individuals who have shaped our journey. Together, we continue to inspire young minds, develop practical skills, and build a brighter future through science and technology.
+                  A Journey Through Time: Discovering the History, Growth, Achievements, and Evolution of Our School’s Technology Section from Its Inception to the Present Day.
                   <span className="mt-3 block font-semibold text-white">
                     Our Journey. Our Innovations. Our Future.
                   </span>

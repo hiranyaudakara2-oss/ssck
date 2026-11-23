@@ -2,11 +2,11 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import {
   doc,
+  enableNetwork,
   getDocFromServer,
   getFirestore,
   initializeFirestore,
   type Firestore,
-  type FirestoreSettings,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -14,13 +14,15 @@ const app = initializeApp(firebaseConfig);
 
 function createFirestoreInstance(): Firestore {
   try {
-    const settings = {
-      experimentalForceLongPolling: true,
-      experimentalLongPollingOptions: { timeoutSeconds: 25 },
-      useFetchStreams: false,
-      ignoreUndefinedProperties: true,
-    } as FirestoreSettings;
-    return initializeFirestore(app, settings, firebaseConfig.firestoreDatabaseId);
+    return initializeFirestore(
+      app,
+      {
+        experimentalForceLongPolling: true,
+        experimentalLongPollingOptions: { timeoutSeconds: 8 },
+        ignoreUndefinedProperties: true,
+      },
+      firebaseConfig.firestoreDatabaseId
+    );
   } catch {
     return getFirestore(app, firebaseConfig.firestoreDatabaseId);
   }
@@ -108,18 +110,72 @@ export function handleFirestoreError(
   throw new Error(JSON.stringify(errInfo));
 }
 
+function hasValidFirebaseConfig(): boolean {
+  return Boolean(
+    firebaseConfig.projectId &&
+      firebaseConfig.projectId !== 'remixed-project-id' &&
+      firebaseConfig.apiKey &&
+      firebaseConfig.firestoreDatabaseId
+  );
+}
+
+function waitForVisibleTab(): Promise<void> {
+  if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        document.removeEventListener('visibilitychange', onVisibility);
+        resolve();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+  });
+}
+
 async function testConnection(retryCount = 0): Promise<void> {
+  if (!hasValidFirebaseConfig()) {
+    console.error('Please check your Firebase configuration.');
+    return;
+  }
+
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    if (typeof window !== 'undefined') {
+      window.addEventListener(
+        'online',
+        () => {
+          void enableNetwork(db)
+            .catch(() => undefined)
+            .then(() => testConnection(0));
+        },
+        { once: true }
+      );
+    }
+    return;
+  }
+
+  // Wait for Firebase Auth hydration and an active foreground tab so Firestore
+  // opens a single clean WatchStream instead of tearing down on CredentialChange.
+  await auth.authStateReady().catch(() => undefined);
+  await waitForVisibleTab();
+
   try {
-    await getDocFromServer(doc(db, 'siteSettings', 'main'));
+    // Use a dedicated read-allowed probe doc ID so the one-shot listen/unlisten
+    // does not race with DataContext's live siteSettings/main snapshot listener.
+    await getDocFromServer(doc(db, 'siteSettings', 'connection-check'));
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
       if (retryCount < 1 && typeof window !== 'undefined') {
+        void enableNetwork(db).catch(() => undefined);
         window.setTimeout(() => {
           void testConnection(retryCount + 1);
         }, 2500);
         return;
       }
-      console.error('Please check your Firebase configuration.');
+      if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+        console.error('Please check your Firebase configuration.');
+      }
     }
   }
 }

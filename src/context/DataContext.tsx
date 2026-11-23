@@ -9,6 +9,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  enableNetwork,
   getDoc,
   getDocs,
   limit,
@@ -39,6 +40,7 @@ import {
   DEFAULT_DOWNLOADS,
   DEFAULT_EVENTS,
   DEFAULT_GALLERY,
+  DEFAULT_HERO_SLIDES,
   DEFAULT_HISTORY_EVENTS,
   DEFAULT_PROJECTS,
   DEFAULT_SITE_SETTINGS,
@@ -46,6 +48,7 @@ import {
   DEFAULT_SUBJECTS,
   DEFAULT_TEACHERS,
   DEFAULT_WEB_LOGO,
+  HERO_CAMPUS_IMAGE,
 } from '../data/seedDefaults';
 import type {
   Achievement,
@@ -61,7 +64,9 @@ import type {
   ContactMessage,
   CustomLink,
   DownloadResource,
+  EventStatus,
   GalleryItem,
+  HeroSlide,
   HistoryMilestone,
   SiteSettings,
   Student,
@@ -92,6 +97,7 @@ const DEFAULT_TOMBSTONE_IDS = new Set<string>([
   ...DEFAULT_ACHIEVEMENTS.map((i) => makeTombstoneId('achievements', i.id)),
   ...DEFAULT_ANNOUNCEMENTS.map((i) => makeTombstoneId('announcements', i.id)),
   ...DEFAULT_GALLERY.map((i) => makeTombstoneId('gallery', i.id)),
+  ...DEFAULT_HERO_SLIDES.map((i) => makeTombstoneId('heroSlides', i.id)),
   ...DEFAULT_PROJECTS.map((i) => makeTombstoneId('projects', i.id)),
   ...DEFAULT_DOWNLOADS.map((i) => makeTombstoneId('downloads', i.id)),
   ...DEFAULT_HISTORY_EVENTS.map((i) => makeTombstoneId('historyEvents', i.id)),
@@ -139,6 +145,7 @@ interface DataContextValue {
   achievements: Achievement[];
   announcements: Announcement[];
   gallery: GalleryItem[];
+  heroSlides: HeroSlide[];
   projects: StudentProject[];
   downloads: DownloadResource[];
   historyEvents: HistoryMilestone[];
@@ -168,6 +175,11 @@ interface DataContextValue {
   deleteCommunityDirectoryMember: (id: string, fullName: string) => Promise<void>;
   seedDefaultCommunityDirectory: () => Promise<void>;
   saveEvent: (data: Omit<CampusEvent, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => Promise<void>;
+  updateEventStatus: (
+    event: CampusEvent,
+    status: EventStatus,
+    cancellationReason?: string
+  ) => Promise<void>;
   deleteEvent: (id: string, title: string) => Promise<void>;
   saveAchievement: (data: Omit<Achievement, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => Promise<void>;
   deleteAchievement: (id: string, title: string) => Promise<void>;
@@ -219,6 +231,12 @@ interface DataContextValue {
     data: Omit<CustomLink, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }
   ) => Promise<void>;
   deleteCustomLink: (id: string, title: string) => Promise<void>;
+  saveHeroSlide: (
+    data: Omit<HeroSlide, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }
+  ) => Promise<void>;
+  deleteHeroSlide: (id: string, caption: string) => Promise<void>;
+  reorderHeroSlides: (orderedSlides: HeroSlide[]) => Promise<void>;
+  restoreDefaultHeroSlides: () => Promise<void>;
   submitContactMessage: (subject: string, message: string) => Promise<void>;
   updateContactStatus: (id: string, status: 'new' | 'reviewed' | 'resolved') => Promise<void>;
   deleteContactMessage: (id: string) => Promise<void>;
@@ -238,6 +256,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAdminDoc, setIsAdminDoc] = useState(false);
+  const [authInitialized, setAuthInitialized] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [adminAuthReady, setAdminAuthReady] = useState(false);
@@ -258,6 +277,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [communityMembersDocs, setCommunityMembersDocs] = useState<CommunityMember[]>([]);
   const [communityDirectoryDocs, setCommunityDirectoryDocs] = useState<CommunityDirectoryMember[]>([]);
   const [customLinksDocs, setCustomLinksDocs] = useState<CustomLink[]>([]);
+  const [heroSlidesDocs, setHeroSlidesDocs] = useState<HeroSlide[]>([]);
 
   const [usersDocs, setUsersDocs] = useState<UserProfile[]>([]);
   const [adminLogsDocs, setAdminLogsDocs] = useState<AdminLog[]>([]);
@@ -376,6 +396,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  // Ensure Firebase Auth finishes initial persistence/token hydration before opening Firestore streams
+  useEffect(() => {
+    let active = true;
+    void auth
+      .authStateReady()
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setAuthInitialized(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // Auth listener & automatic user profile sync
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -473,9 +507,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return () => unsub();
   }, [user, handleListenerError]);
 
-  // Public real-time Firestore listeners (completely independent of admin authentication)
-  // Uses resilient retry-on-transient-error + online/focus wakeups so unauthenticated visitors never miss updates
+  // Public real-time Firestore listeners (independent of admin authentication)
+  // Wait for initial Auth hydration so WatchStream opens once with stable credentials
   useEffect(() => {
+    if (!authInitialized) return;
     let unmounted = false;
     const cleanups: (() => void)[] = [];
     const retryTriggers: (() => void)[] = [];
@@ -748,12 +783,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
+    attachResilientListener<QuerySnapshot<DocumentData>>(
+      'heroSlides',
+      (onNext, onError) =>
+        onSnapshot(query(collection(db, 'heroSlides'), orderBy('order', 'asc')), onNext, onError),
+      (snap) => {
+        setHeroSlidesDocs(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<HeroSlide, 'id'>) }))
+        );
+      }
+    );
+
     const handleReconnect = () => {
+      void enableNetwork(db).catch(() => undefined);
       retryTriggers.forEach((trigger) => trigger());
     };
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        handleReconnect();
+        retryTriggers.forEach((trigger) => trigger());
       }
     };
     window.addEventListener('online', handleReconnect);
@@ -766,7 +813,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener('visibilitychange', handleVisibility);
       cleanups.forEach((u) => u());
     };
-  }, [handleListenerError]);
+  }, [authInitialized, handleListenerError]);
 
   // Admin-only listeners
   useEffect(() => {
@@ -899,6 +946,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         { name: 'achievements', items: DEFAULT_ACHIEVEMENTS },
         { name: 'announcements', items: DEFAULT_ANNOUNCEMENTS },
         { name: 'gallery', items: DEFAULT_GALLERY },
+        { name: 'heroSlides', items: DEFAULT_HERO_SLIDES },
         { name: 'projects', items: DEFAULT_PROJECTS },
         { name: 'downloads', items: DEFAULT_DOWNLOADS },
         { name: 'historyEvents', items: DEFAULT_HISTORY_EVENTS },
@@ -1079,6 +1127,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           heroSubtitle: clampString(data.heroSubtitle, 500, DEFAULT_SITE_SETTINGS.heroSubtitle),
           heroBannerUrl: clampString(normalizeMediaUrl(data.heroBannerUrl || ''), 1000),
           logoUrl: clampString(normalizeMediaUrl(data.logoUrl || ''), 1000),
+          floatingWidgetImageUrl: clampString(
+            normalizeMediaUrl(data.floatingWidgetImageUrl || DEFAULT_WEB_LOGO),
+            1000
+          ),
           aboutMission: clampString(data.aboutMission, 2000, DEFAULT_SITE_SETTINGS.aboutMission),
           aboutVision: clampString(data.aboutVision, 2000, DEFAULT_SITE_SETTINGS.aboutVision),
           footerAddress: clampString(data.footerAddress || '', 300),
@@ -1114,15 +1166,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const saveSubject = useCallback(
     async (data: Omit<Subject, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
       assertCloudAdminAuth();
-      const id = data.id ? preserveDocId(data.id) : createUniqueId(data.code || 'subj');
+      const cleanCode = clampString(data.code, 20, 'TECH');
+      const cleanName = clampString(data.name, 120);
+      const cleanShort = clampString(data.shortDescription, 300);
+      const cleanFull = clampString(data.fullDescription, 3000);
+      if (cleanCode.length < 2) throw new Error('Subject code must be at least 2 characters.');
+      if (cleanName.length < 2) throw new Error('Subject name must be at least 2 characters.');
+      if (cleanShort.length < 2) throw new Error('Short description must be at least 2 characters.');
+      if (cleanFull.length < 2) throw new Error('Full description must be at least 2 characters.');
+
+      const id = data.id ? preserveDocId(data.id) : createUniqueId(cleanCode || 'subj');
       const path = `subjects/${id}`;
       try {
         const existingSnap = await getDoc(doc(db, 'subjects', id));
         const payload = {
-          code: clampString(data.code, 20, 'TECH'),
-          name: clampString(data.name, 120),
-          shortDescription: clampString(data.shortDescription, 300),
-          fullDescription: clampString(data.fullDescription, 3000),
+          code: cleanCode,
+          name: cleanName,
+          shortDescription: cleanShort,
+          fullDescription: cleanFull,
           imageUrl: clampString(normalizeMediaUrl(data.imageUrl || ''), 1000),
           headTeacherName: clampString(data.headTeacherName || '', 120),
           headTeacherTitle: clampString(data.headTeacherTitle || '', 120),
@@ -1164,14 +1225,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const saveTeacher = useCallback(
     async (data: Omit<Teacher, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
       assertCloudAdminAuth();
+      const cleanName = clampString(data.name, 120);
+      const cleanRole = clampString(data.role, 120);
+      const cleanDept = clampString(data.department, 100);
+      if (cleanName.length < 2) throw new Error('Teacher name must be at least 2 characters.');
+      if (cleanRole.length < 2) throw new Error('Teacher role/designation must be at least 2 characters.');
+      if (cleanDept.length < 2) throw new Error('Department/subject must be at least 2 characters.');
+
       const id = data.id ? preserveDocId(data.id) : createUniqueId('teacher');
       const path = `teachers/${id}`;
       try {
         const existingSnap = await getDoc(doc(db, 'teachers', id));
         const payload = {
-          name: clampString(data.name, 120),
-          role: clampString(data.role, 120),
-          department: clampString(data.department, 100),
+          name: cleanName,
+          role: cleanRole,
+          department: cleanDept,
           qualifications: clampString(data.qualifications || '', 300),
           bio: clampString(data.bio || '', 1200),
           photoUrl: clampString(normalizeMediaUrl(data.photoUrl || ''), 1000),
@@ -1211,14 +1279,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const saveStudent = useCallback(
     async (data: Omit<Student, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
       assertCloudAdminAuth();
+      const cleanName = clampString(data.fullName, 120);
+      const cleanGrade = clampString(data.gradeLevel, 60);
+      const cleanStream = clampString(data.stream, 100);
+      if (cleanName.length < 2) throw new Error('Student full name must be at least 2 characters.');
+      if (cleanGrade.length < 1) throw new Error('Grade level is required.');
+      if (cleanStream.length < 2) throw new Error('Technology stream must be at least 2 characters.');
+
       const id = data.id ? preserveDocId(data.id) : createUniqueId('student');
       const path = `students/${id}`;
       try {
         const existingSnap = await getDoc(doc(db, 'students', id));
         const payload = {
-          fullName: clampString(data.fullName, 120),
-          gradeLevel: clampString(data.gradeLevel, 60),
-          stream: clampString(data.stream, 100),
+          fullName: cleanName,
+          gradeLevel: cleanGrade,
+          stream: cleanStream,
           roleTitle: clampString(data.roleTitle || '', 120),
           achievementsSummary: clampString(data.achievementsSummary || '', 800),
           photoUrl: clampString(normalizeMediaUrl(data.photoUrl || ''), 1000),
@@ -1261,6 +1336,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       data: Omit<CommunityDirectoryMember, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }
     ) => {
       assertCloudAdminAuth();
+      const cleanName = clampString(data.fullName, 120);
+      const cleanBio = clampString(data.bio, 1200);
+      const cleanYear = clampString(data.year || '2026', 12, '2026');
+      if (cleanName.length < 2) throw new Error('Full name must be at least 2 characters.');
+      if (cleanBio.length < 2) throw new Error('Biography must be at least 2 characters.');
+      if (cleanYear.length < 4) throw new Error('Year must be at least 4 characters (e.g., 2026).');
+
       const id = data.id ? preserveDocId(data.id) : createUniqueId('member');
       const path = `communityDirectory/${id}`;
       try {
@@ -1273,10 +1355,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           });
         }
         const payload = {
-          fullName: clampString(data.fullName, 120),
+          fullName: cleanName,
           position: data.position,
-          year: clampString(data.year || '2026', 12) || '2026',
-          bio: clampString(data.bio, 1200),
+          year: cleanYear,
+          bio: cleanBio,
           photoUrl: clampString(normalizeMediaUrl(data.photoUrl || ''), 1000),
           secondaryPhotoUrl: clampString(normalizeMediaUrl(data.secondaryPhotoUrl || ''), 1000),
           memberCode: clampString(data.memberCode || '', 40),
@@ -1357,24 +1439,56 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const saveEvent = useCallback(
     async (data: Omit<CampusEvent, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
       assertCloudAdminAuth();
+      const cleanTitle = clampString(data.title, 160);
+      const cleanCategory = clampString(data.category, 80);
+      const cleanEventDate = clampString(data.eventDate, 60);
+      const cleanLocation = clampString(data.location, 160);
+      if (!cleanTitle) {
+        throw new Error('Event title is required.');
+      }
+      if (!cleanCategory) {
+        throw new Error('Event category is required.');
+      }
+      if (cleanEventDate.length < 4) {
+        throw new Error('Please choose a valid event date (YYYY-MM-DD).');
+      }
+      if (!cleanLocation) {
+        throw new Error('Event location is required.');
+      }
+
+      const validStatuses: EventStatus[] = ['scheduled', 'live', 'cancelled', 'closed'];
+      const resolvedStatus: EventStatus =
+        data.status && validStatuses.includes(data.status)
+          ? data.status
+          : data.isUpcoming
+          ? 'scheduled'
+          : 'closed';
+      const resolvedUpcoming = resolvedStatus === 'scheduled' || resolvedStatus === 'live';
+
       const id = data.id ? preserveDocId(data.id) : createUniqueId('event');
       const path = `events/${id}`;
       try {
-        const existingSnap = await getDoc(doc(db, 'events', id));
+        const isExisting = data.id ? (await getDoc(doc(db, 'events', id))).exists() : false;
         const payload = {
-          title: clampString(data.title, 160),
-          category: clampString(data.category, 80),
-          eventDate: clampString(data.eventDate, 60),
+          title: cleanTitle,
+          category: cleanCategory,
+          eventDate: cleanEventDate,
           startTime: clampString(data.startTime || '', 20),
           timeLabel: clampString(data.timeLabel || '', 60),
-          location: clampString(data.location, 160),
+          location: cleanLocation,
           description: clampString(data.description || '', 2000),
           imageUrl: clampString(normalizeMediaUrl(data.imageUrl || ''), 1000),
-          isUpcoming: Boolean(data.isUpcoming),
+          isUpcoming: resolvedUpcoming,
+          status: resolvedStatus,
+          cancellationReason:
+            resolvedStatus === 'cancelled'
+              ? clampString(data.cancellationReason || '', 400)
+              : '',
+          liveStreamUrl: clampString(data.liveStreamUrl || '', 1000),
           registrationLink: clampString(data.registrationLink || '', 1000),
           updatedAt: serverTimestamp(),
         };
-        if (existingSnap.exists()) {
+        if (isExisting) {
           await updateDoc(doc(db, 'events', id), payload);
           await logAdminAction('Updated Event', 'events', payload.title);
         } else {
@@ -1382,6 +1496,59 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await logAdminAction('Created Event', 'events', payload.title);
         }
         await unmarkDefaultDeleted('events', id);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, path);
+      }
+    },
+    [assertCloudAdminAuth, logAdminAction, unmarkDefaultDeleted]
+  );
+
+  const updateEventStatus = useCallback(
+    async (event: CampusEvent, status: EventStatus, cancellationReason?: string) => {
+      assertCloudAdminAuth();
+      const id = preserveDocId(event.id);
+      const path = `events/${id}`;
+      const nextUpcoming = status === 'scheduled' || status === 'live';
+      const cleanReason =
+        status === 'cancelled' ? clampString(cancellationReason || '', 400) : '';
+
+      const actionLabelMap: Record<EventStatus, string> = {
+        live: 'Started Live Event',
+        cancelled: 'Cancelled Event',
+        closed: 'Closed Event',
+        scheduled: 'Reset Event Schedule',
+      };
+
+      try {
+        const existingSnap = await getDoc(doc(db, 'events', id));
+        if (existingSnap.exists()) {
+          await updateDoc(doc(db, 'events', id), {
+            status,
+            isUpcoming: nextUpcoming,
+            cancellationReason: cleanReason,
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          await setDoc(doc(db, 'events', id), {
+            title: clampString(event.title, 160, 'SSCK TECH Event'),
+            category: clampString(event.category, 80, 'Workshop'),
+            eventDate: clampString(event.eventDate, 60, new Date().toISOString().slice(0, 10)),
+            startTime: clampString(event.startTime || '', 20),
+            timeLabel: clampString(event.timeLabel || '', 60),
+            location: clampString(event.location, 160, 'SSCK TECH Campus'),
+            description: clampString(event.description || '', 2000),
+            imageUrl: clampString(normalizeMediaUrl(event.imageUrl || ''), 1000),
+            isUpcoming: nextUpcoming,
+            status,
+            cancellationReason: cleanReason,
+            liveStreamUrl: clampString(event.liveStreamUrl || '', 1000),
+            registrationLink: clampString(event.registrationLink || '', 1000),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          await unmarkDefaultDeleted('events', id);
+        }
+        await logAdminAction(actionLabelMap[status], 'events', event.title);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
@@ -1407,17 +1574,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const saveAchievement = useCallback(
     async (data: Omit<Achievement, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
       assertCloudAdminAuth();
+      const cleanTitle = clampString(data.title, 160);
+      const cleanCategory = clampString(data.category, 80);
+      const cleanYear = clampString(data.year, 12);
+      if (cleanTitle.length < 2) throw new Error('Achievement title must be at least 2 characters.');
+      if (cleanCategory.length < 2) throw new Error('Category must be at least 2 characters.');
+      if (cleanYear.length < 4) throw new Error('Year must be at least 4 characters (e.g., 2026).');
+
       const id = data.id ? preserveDocId(data.id) : createUniqueId('ach');
       const path = `achievements/${id}`;
       try {
         const existingSnap = await getDoc(doc(db, 'achievements', id));
         const payload = {
-          title: clampString(data.title, 160),
-          category: clampString(data.category, 80),
+          title: cleanTitle,
+          category: cleanCategory,
           awardLevel: data.awardLevel,
           tier: data.tier || 'Gold',
           iconType: data.iconType || 'trophy',
-          year: clampString(data.year, 12),
+          year: cleanYear,
           awardDate: clampString(data.awardDate || '', 40),
           recipients: clampString(data.recipients || '', 240),
           description: clampString(data.description || '', 1500),
@@ -1458,17 +1632,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const saveAnnouncement = useCallback(
     async (data: Omit<Announcement, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
       assertCloudAdminAuth();
+      const cleanTitle = clampString(data.title, 160);
+      const cleanSummary = clampString(data.summary, 360);
+      const cleanPublishDate = clampString(data.publishDate, 40);
+      if (cleanTitle.length < 2) throw new Error('Announcement title must be at least 2 characters.');
+      if (cleanSummary.length < 2) throw new Error('Summary must be at least 2 characters.');
+      if (cleanPublishDate.length < 4) throw new Error('Publish date must be at least 4 characters.');
+
       const id = data.id ? preserveDocId(data.id) : createUniqueId('ann');
       const path = `announcements/${id}`;
       try {
         const existingSnap = await getDoc(doc(db, 'announcements', id));
         const payload = {
-          title: clampString(data.title, 160),
-          summary: clampString(data.summary, 360),
+          title: cleanTitle,
+          summary: cleanSummary,
           body: clampString(data.body || '', 3000),
           imageUrl: clampString(normalizeMediaUrl(data.imageUrl || ''), 1000),
           priority: data.priority,
-          publishDate: clampString(data.publishDate, 40),
+          publishDate: cleanPublishDate,
           pinnedToHome: Boolean(data.pinnedToHome),
           authorName: clampString(data.authorName || user?.displayName || 'Admin', 120),
           updatedAt: serverTimestamp(),
@@ -1506,15 +1687,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const saveGalleryItem = useCallback(
     async (data: Omit<GalleryItem, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
       assertCloudAdminAuth();
+      const cleanTitle = clampString(data.title, 160);
+      const cleanCategory = clampString(data.category, 80);
+      const cleanMediaUrl = clampString(normalizeMediaUrl(data.mediaUrl), 1000);
+      if (cleanTitle.length < 2) throw new Error('Gallery title must be at least 2 characters.');
+      if (cleanCategory.length < 2) throw new Error('Category must be at least 2 characters.');
+      if (cleanMediaUrl.length < 2) throw new Error('Please upload an image or provide a valid media URL.');
+
       const id = data.id ? preserveDocId(data.id) : createUniqueId('gal');
       const path = `gallery/${id}`;
       try {
         const existingSnap = await getDoc(doc(db, 'gallery', id));
         const payload = {
-          title: clampString(data.title, 160),
-          category: clampString(data.category, 80),
+          title: cleanTitle,
+          category: cleanCategory,
           mediaType: data.mediaType,
-          mediaUrl: clampString(normalizeMediaUrl(data.mediaUrl), 1000),
+          mediaUrl: cleanMediaUrl,
           description: clampString(data.description || '', 600),
           capturedDate: clampString(data.capturedDate || '', 40),
           driveUrl: clampString(data.driveUrl || '', 500),
@@ -1553,16 +1741,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const saveProject = useCallback(
     async (data: Omit<StudentProject, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
       assertCloudAdminAuth();
+      const cleanTitle = clampString(data.title, 160);
+      const cleanSubject = clampString(data.subjectCode, 30);
+      const cleanTeam = clampString(data.studentTeam, 240);
+      const cleanYear = clampString(data.year, 12);
+      const cleanSummary = clampString(data.summary, 500);
+      if (cleanTitle.length < 2) throw new Error('Project title must be at least 2 characters.');
+      if (cleanSubject.length < 2) throw new Error('Subject code must be at least 2 characters.');
+      if (cleanTeam.length < 2) throw new Error('Student team must be at least 2 characters.');
+      if (cleanYear.length < 4) throw new Error('Year must be at least 4 characters (e.g., 2026).');
+      if (cleanSummary.length < 2) throw new Error('Project summary must be at least 2 characters.');
+
       const id = data.id ? preserveDocId(data.id) : createUniqueId('proj');
       const path = `projects/${id}`;
       try {
         const existingSnap = await getDoc(doc(db, 'projects', id));
         const payload = {
-          title: clampString(data.title, 160),
-          subjectCode: clampString(data.subjectCode, 30),
-          studentTeam: clampString(data.studentTeam, 240),
-          year: clampString(data.year, 12),
-          summary: clampString(data.summary, 500),
+          title: cleanTitle,
+          subjectCode: cleanSubject,
+          studentTeam: cleanTeam,
+          year: cleanYear,
+          summary: cleanSummary,
           technicalDetails: clampString(data.technicalDetails || '', 3000),
           imageUrl: clampString(normalizeMediaUrl(data.imageUrl || ''), 1000),
           demoUrl: clampString(data.demoUrl || '', 1000),
@@ -1602,17 +1801,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const saveDownloadResource = useCallback(
     async (data: Omit<DownloadResource, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
       assertCloudAdminAuth();
+      const cleanTitle = clampString(data.title, 160);
+      const cleanSubject = clampString(data.subjectCode, 30);
+      const cleanFileUrl = clampString(data.fileUrl, 1000);
+      if (cleanTitle.length < 2) throw new Error('Resource title must be at least 2 characters.');
+      if (cleanSubject.length < 2) throw new Error('Subject code must be at least 2 characters.');
+      if (cleanFileUrl.length < 2) throw new Error('Please provide a valid download URL.');
+
       const id = data.id ? preserveDocId(data.id) : createUniqueId('dl');
       const path = `downloads/${id}`;
       try {
         const existingSnap = await getDoc(doc(db, 'downloads', id));
         const payload = {
-          title: clampString(data.title, 160),
-          subjectCode: clampString(data.subjectCode, 30),
+          title: cleanTitle,
+          subjectCode: cleanSubject,
           resourceType: data.resourceType,
           fileFormat: data.fileFormat,
           fileSizeLabel: clampString(data.fileSizeLabel || '', 40),
-          fileUrl: clampString(data.fileUrl, 1000),
+          fileUrl: cleanFileUrl,
           description: clampString(data.description || '', 600),
           updatedAt: serverTimestamp(),
         };
@@ -1649,15 +1855,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const saveHistoryMilestone = useCallback(
     async (data: Omit<HistoryMilestone, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
       assertCloudAdminAuth();
+      const cleanYear = clampString(data.year, 40);
+      const cleanEra = clampString(data.era, 80);
+      const cleanTitle = clampString(data.title, 160);
+      const cleanDesc = clampString(data.description, 2500);
+      if (cleanYear.length < 2) throw new Error('Milestone year must be at least 2 characters.');
+      if (cleanEra.length < 2) throw new Error('Era label must be at least 2 characters.');
+      if (cleanTitle.length < 2) throw new Error('Milestone title must be at least 2 characters.');
+      if (cleanDesc.length < 5) throw new Error('Description must be at least 5 characters.');
+
       const id = data.id ? preserveDocId(data.id) : createUniqueId('hist');
       const path = `historyEvents/${id}`;
       try {
         const existingSnap = await getDoc(doc(db, 'historyEvents', id));
         const payload = {
-          year: clampString(data.year, 40),
-          era: clampString(data.era, 80),
-          title: clampString(data.title, 160),
-          description: clampString(data.description, 2500),
+          year: cleanYear,
+          era: cleanEra,
+          title: cleanTitle,
+          description: cleanDesc,
           impactSummary: clampString(data.impactSummary || '', 500),
           imageUrl: clampString(normalizeMediaUrl(data.imageUrl || ''), 1000),
           order: clampNumber(data.order, 0, 1000, 1),
@@ -2064,6 +2279,155 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [assertCloudAdminAuth, logAdminAction]
   );
 
+  const heroSlides = useMemo<HeroSlide[]>(() => {
+    const merged = mergeCollectionWithDefaults(
+      DEFAULT_HERO_SLIDES as HeroSlide[],
+      heroSlidesDocs,
+      deletedDefaultKeys,
+      'heroSlides'
+    );
+    return merged
+      .map((item) => ({
+        ...item,
+        imageUrl: normalizeMediaUrl(item.imageUrl),
+        subtitle: item.subtitle || '',
+      }))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .slice(0, 5);
+  }, [heroSlidesDocs, deletedDefaultKeys]);
+
+  const saveHeroSlide = useCallback(
+    async (data: Omit<HeroSlide, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
+      assertCloudAdminAuth();
+      const isEditingExisting = Boolean(data.id && heroSlides.some((s) => s.id === data.id));
+      if (!isEditingExisting && heroSlides.length >= 5) {
+        throw new Error(
+          'Maximum of 5 hero showcase photos reached. Edit, replace, or delete an existing photo first.'
+        );
+      }
+      const cleanImageUrl = clampString(normalizeMediaUrl(data.imageUrl), 1000);
+      if (!cleanImageUrl) {
+        throw new Error('Please upload an image or provide a valid image URL.');
+      }
+      const cleanCaption = clampString(data.caption, 220);
+      if (cleanCaption.length < 2) {
+        throw new Error('Please enter a caption (at least 2 characters).');
+      }
+
+      const id = data.id ? preserveDocId(data.id) : createUniqueId('hero-slide');
+      const path = `heroSlides/${id}`;
+      try {
+        const existingSnap = await getDoc(doc(db, 'heroSlides', id));
+        const payload = {
+          imageUrl: cleanImageUrl,
+          caption: cleanCaption,
+          subtitle: clampString(data.subtitle || '', 120),
+          order: clampNumber(data.order, 0, 100, heroSlides.length + 1),
+          updatedAt: serverTimestamp(),
+        };
+        if (existingSnap.exists()) {
+          await updateDoc(doc(db, 'heroSlides', id), payload);
+          await logAdminAction('Updated Hero Photo Slide', 'heroSlides', payload.caption);
+        } else {
+          await setDoc(doc(db, 'heroSlides', id), {
+            ...payload,
+            createdAt: serverTimestamp(),
+          });
+          await logAdminAction('Added Hero Photo Slide', 'heroSlides', payload.caption);
+        }
+        await unmarkDefaultDeleted('heroSlides', id);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, path);
+      }
+    },
+    [assertCloudAdminAuth, heroSlides, logAdminAction, unmarkDefaultDeleted]
+  );
+
+  const deleteHeroSlide = useCallback(
+    async (id: string, caption: string) => {
+      const cloudUser = assertCloudAdminAuth();
+      const path = `heroSlides/${id}`;
+      try {
+        await deleteDoc(doc(db, 'heroSlides', id));
+        await markDefaultDeleted('heroSlides', id, cloudUser.uid);
+        await logAdminAction('Deleted Hero Photo Slide', 'heroSlides', caption || id);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, path);
+      }
+    },
+    [assertCloudAdminAuth, logAdminAction, markDefaultDeleted]
+  );
+
+  const reorderHeroSlides = useCallback(
+    async (orderedSlides: HeroSlide[]) => {
+      assertCloudAdminAuth();
+      const path = 'heroSlides';
+      try {
+        const capped = orderedSlides.slice(0, 5);
+        const existingChecks = await Promise.all(
+          capped.map((slide) => getDoc(doc(db, 'heroSlides', slide.id)))
+        );
+        const now = serverTimestamp();
+        const batch = writeBatch(db);
+        capped.forEach((slide, idx) => {
+          const ref = doc(db, 'heroSlides', slide.id);
+          const nextOrder = idx + 1;
+          if (existingChecks[idx]?.exists()) {
+            batch.update(ref, { order: nextOrder, updatedAt: now });
+          } else {
+            batch.set(ref, {
+              imageUrl: clampString(normalizeMediaUrl(slide.imageUrl), 1000, HERO_CAMPUS_IMAGE),
+              caption: clampString(slide.caption, 220, 'SSCK TECH Showcase'),
+              subtitle: clampString(slide.subtitle || '', 120),
+              order: nextOrder,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }
+        });
+        await batch.commit();
+        await logAdminAction('Reordered Hero Photo Slides', 'heroSlides', `${capped.length} slides`);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, path);
+      }
+    },
+    [assertCloudAdminAuth, logAdminAction]
+  );
+
+  const restoreDefaultHeroSlides = useCallback(async () => {
+    assertCloudAdminAuth();
+    const path = 'heroSlides';
+    try {
+      const existingSnap = await getDocs(collection(db, 'heroSlides'));
+      const defaultIds = new Set(DEFAULT_HERO_SLIDES.map((d) => d.id));
+      const now = serverTimestamp();
+      const batch = writeBatch(db);
+
+      existingSnap.docs.forEach((docItem) => {
+        if (!defaultIds.has(docItem.id)) {
+          batch.delete(docItem.ref);
+        }
+      });
+
+      DEFAULT_HERO_SLIDES.forEach(({ id, ...rest }) => {
+        const tombstoneId = makeTombstoneId('heroSlides', id);
+        if (deletedDefaultKeys.includes(tombstoneId)) {
+          batch.delete(doc(db, 'deletedDefaults', tombstoneId));
+        }
+        batch.set(doc(db, 'heroSlides', id), {
+          ...rest,
+          createdAt: now,
+          updatedAt: now,
+        });
+      });
+
+      await batch.commit();
+      await logAdminAction('Restored Default Hero Photos', 'heroSlides', '5 Institutional Photos');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  }, [assertCloudAdminAuth, logAdminAction, deletedDefaultKeys]);
+
   const submitContactMessage = useCallback(
     async (subject: string, message: string) => {
       if (!user || !user.emailVerified) {
@@ -2262,12 +2626,37 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       deletedDefaultKeys,
       'events'
     );
+    const statusPriority: Record<EventStatus, number> = {
+      live: 0,
+      scheduled: 1,
+      cancelled: 2,
+      closed: 3,
+    };
     return merged
-      .map((item) => ({ ...item, imageUrl: normalizeMediaUrl(item.imageUrl) }))
+      .map((item) => {
+        const normalizedStatus: EventStatus =
+          item.status && ['scheduled', 'live', 'cancelled', 'closed'].includes(item.status)
+            ? item.status
+            : item.isUpcoming
+            ? 'scheduled'
+            : 'closed';
+        return {
+          ...item,
+          status: normalizedStatus,
+          isUpcoming: normalizedStatus === 'scheduled' || normalizedStatus === 'live',
+          imageUrl: normalizeMediaUrl(item.imageUrl),
+        };
+      })
       .sort((a, b) => {
+        const rankDiff =
+          statusPriority[a.status ?? 'scheduled'] - statusPriority[b.status ?? 'scheduled'];
+        if (rankDiff !== 0) return rankDiff;
         const dateCmp = (b.eventDate || '').localeCompare(a.eventDate || '');
         if (dateCmp !== 0) return dateCmp;
-        return (b.updatedAt?.seconds ?? b.createdAt?.seconds ?? 0) - (a.updatedAt?.seconds ?? a.createdAt?.seconds ?? 0);
+        return (
+          (b.updatedAt?.seconds ?? b.createdAt?.seconds ?? 0) -
+          (a.updatedAt?.seconds ?? a.createdAt?.seconds ?? 0)
+        );
       });
   }, [eventsDocs, deletedDefaultKeys]);
 
@@ -2404,6 +2793,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     achievements,
     announcements,
     gallery,
+    heroSlides,
     projects,
     downloads,
     historyEvents,
@@ -2431,6 +2821,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     deleteCommunityDirectoryMember,
     seedDefaultCommunityDirectory,
     saveEvent,
+    updateEventStatus,
     deleteEvent,
     saveAchievement,
     deleteAchievement,
@@ -2457,6 +2848,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     deleteUserAccount,
     saveCustomLink,
     deleteCustomLink,
+    saveHeroSlide,
+    deleteHeroSlide,
+    reorderHeroSlides,
+    restoreDefaultHeroSlides,
     submitContactMessage,
     updateContactStatus,
     deleteContactMessage,

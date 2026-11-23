@@ -120,6 +120,24 @@ export function Footer({
           <p>{siteSettings.footerCopyright}</p>
         </div>
       </div>
+
+      <div
+        aria-label="Color palette"
+        className="absolute bottom-3 right-4 flex items-center gap-2"
+      >
+        <span
+          title="Maroon (#800000)"
+          className="h-[11px] w-[11px] rounded-full bg-[#800000] transition-transform duration-200 ease-out hover:scale-[1.2]"
+        />
+        <span
+          title="Ivory (#FFFFF0)"
+          className="h-[11px] w-[11px] rounded-full border border-white/25 bg-[#FFFFF0] transition-transform duration-200 ease-out hover:scale-[1.2]"
+        />
+        <span
+          title="Dark Blue (#00008B)"
+          className="h-[11px] w-[11px] rounded-full bg-[#00008B] transition-transform duration-200 ease-out hover:scale-[1.2]"
+        />
+      </div>
     </footer>
   );
 }

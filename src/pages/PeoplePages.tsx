@@ -10,7 +10,6 @@ import {
   Hash,
   Instagram,
   Linkedin,
-  MapPin,
   RotateCcw,
   RotateCw,
   Search,
@@ -18,7 +17,7 @@ import {
   Twitter,
   Users,
 } from 'lucide-react';
-import { HoverInfoBox } from '../components/HoverInfoBox';
+import { Team3DCarousel } from '../components/Team3DCarousel';
 import {
   AnimatedCounter,
   MorphingBackdrop,
@@ -28,6 +27,13 @@ import {
 import { useData } from '../context/DataContext';
 import { MEMBER_ARCHIVE_YEARS } from '../data/seedDefaults';
 import type { CommunityDirectoryMember, PageRoute } from '../types';
+
+
+const COMMITTEE_ONLY_POSITIONS = new Set(['Committee Member', 'General Community Member']);
+
+function isMainCommitteeMember(member: CommunityDirectoryMember): boolean {
+  return Boolean(member.isExecutive && !COMMITTEE_ONLY_POSITIONS.has(member.position));
+}
 
 function getPositionBadgeStyle(position: string, isExecutive: boolean) {
   if (position === 'President') {
@@ -334,14 +340,8 @@ export function TeachersMembersPage({
   const { teachers, communityDirectory, registeredMembersCount, loadingData } = useData();
   const [activeTab, setActiveTab] = useState<'all' | 'teachers' | 'members'>(initialTab);
   const [queryText, setQueryText] = useState('');
-  const [departmentFilter, setDepartmentFilter] = useState('All');
   const [groupFilter, setGroupFilter] = useState<'all' | 'executive' | 'general'>('all');
   const [selectedYear, setSelectedYear] = useState<string>('All');
-
-  const departments = useMemo(() => {
-    const set = new Set(teachers.map((t) => t.department));
-    return ['All', ...Array.from(set)];
-  }, [teachers]);
 
   const availableYears = useMemo(() => {
     const set = new Set<string>(MEMBER_ARCHIVE_YEARS);
@@ -362,19 +362,6 @@ export function TeachersMembersPage({
     return counts;
   }, [communityDirectory]);
 
-  const filteredTeachers = useMemo(() => {
-    return teachers.filter((t) => {
-      const matchDept = departmentFilter === 'All' || t.department === departmentFilter;
-      const q = queryText.trim().toLowerCase();
-      const matchQuery =
-        !q ||
-        t.name.toLowerCase().includes(q) ||
-        t.role.toLowerCase().includes(q) ||
-        (t.qualifications || '').toLowerCase().includes(q);
-      return matchDept && matchQuery;
-    });
-  }, [teachers, departmentFilter, queryText]);
-
   const sortedDirectory = useMemo(() => {
     return [...communityDirectory].sort((a, b) => (a.order ?? 10) - (b.order ?? 10));
   }, [communityDirectory]);
@@ -387,8 +374,9 @@ export function TeachersMembersPage({
   const filteredMembers = useMemo(() => {
     const q = queryText.trim().toLowerCase();
     return yearScopedMembers.filter((member) => {
-      if (groupFilter === 'executive' && !member.isExecutive) return false;
-      if (groupFilter === 'general' && member.isExecutive) return false;
+      const isMain = isMainCommitteeMember(member);
+      if (groupFilter === 'executive' && !isMain) return false;
+      if (groupFilter === 'general' && isMain) return false;
       if (!q) return true;
       return (
         member.fullName.toLowerCase().includes(q) ||
@@ -400,8 +388,23 @@ export function TeachersMembersPage({
     });
   }, [yearScopedMembers, groupFilter, queryText]);
 
+  const mainCommitteeDirectory = useMemo(
+    () => sortedDirectory.filter(isMainCommitteeMember),
+    [sortedDirectory]
+  );
+
+  const filteredMainCommittee = useMemo(
+    () => filteredMembers.filter(isMainCommitteeMember),
+    [filteredMembers]
+  );
+
+  const filteredCommitteeMembers = useMemo(
+    () => filteredMembers.filter((m) => !isMainCommitteeMember(m)),
+    [filteredMembers]
+  );
+
   const executiveCount = useMemo(
-    () => yearScopedMembers.filter((m) => m.isExecutive).length,
+    () => yearScopedMembers.filter(isMainCommitteeMember).length,
     [yearScopedMembers]
   );
 
@@ -439,11 +442,11 @@ export function TeachersMembersPage({
           </div>
           <div className="glass-surface rounded-2xl p-4 sm:p-5">
             <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>Executive Committee</span>
+              <span>Executive Board</span>
               <Crown className="h-4 w-4 text-cyan-400" />
             </div>
             <p className="font-display mt-2 text-2xl font-bold text-white">
-              <AnimatedCounter value={communityDirectory.filter((m) => m.isExecutive).length} />
+              <AnimatedCounter value={mainCommitteeDirectory.length} />
             </p>
           </div>
           <div className="glass-surface rounded-2xl p-4 sm:p-5">
@@ -516,100 +519,49 @@ export function TeachersMembersPage({
           </div>
         </div>
 
-        {/* Section 1: Teachers & Faculty */}
+        {/* Teachers 3D Coverflow Carousel Section */}
         {(activeTab === 'all' || activeTab === 'teachers') && (
-          <section className="mt-10" aria-labelledby="teachers-heading">
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">
-                  Instructional Faculty
-                </p>
-                <h2
-                  id="teachers-heading"
-                  className="font-display mt-1 text-2xl font-bold text-white sm:text-3xl"
-                >
-                  Educators &amp; Lab Instructors
-                </h2>
-              </div>
-              <div className="flex flex-wrap items-center gap-1 rounded-xl bg-white/5 p-1">
-                {departments.map((dept) => (
-                  <button
-                    key={dept}
-                    type="button"
-                    onClick={() => setDepartmentFilter(dept)}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap ${
-                      departmentFilter === dept
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-300 hover:text-white'
-                    }`}
-                  >
-                    {dept}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {filteredTeachers.length === 0 ? (
-              <div className="glass-surface rounded-2xl p-8 text-center text-sm text-slate-400">
-                No faculty members match your filter criteria.
-              </div>
-            ) : (
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {filteredTeachers.map((teacher) => (
-                  <RevealBlock key={teacher.id}>
-                    <HoverInfoBox
-                      className="h-full"
-                      title={teacher.name}
-                      badge={`${teacher.department} · ${teacher.role}`}
-                      description={
-                        teacher.officeRoom || teacher.qualifications || 'Technology Section Faculty'
-                      }
-                    >
-                      <article className="glass-surface flex h-full flex-col overflow-hidden rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:border-blue-400/45 hover:shadow-[0_14px_34px_-10px_rgba(59,130,246,0.3)]">
-                        <div className="aspect-[4/3] w-full overflow-hidden bg-[#091127]">
-                          <SafeImage
-                            src={teacher.photoUrl}
-                            alt={teacher.name}
-                            fallbackLabel={teacher.name}
-                            className="h-full w-full object-cover transition-transform duration-500 hover:scale-105"
-                          />
-                        </div>
-                        <div className="flex flex-1 flex-col p-6">
-                          <div className="flex items-center gap-2 text-xs text-blue-300">
-                            <span className="font-mono font-semibold">{teacher.department}</span>
-                            <span aria-hidden="true">·</span>
-                            <span className="truncate text-slate-400">{teacher.role}</span>
-                          </div>
-                          <h3 className="font-display mt-2 text-xl font-semibold text-white">
-                            {teacher.name}
-                          </h3>
-                          {teacher.qualifications && (
-                            <p className="mt-1.5 text-xs font-medium text-slate-400">
-                              {teacher.qualifications}
-                            </p>
-                          )}
-                          {teacher.bio && (
-                            <p className="mt-3 flex-1 text-sm leading-relaxed text-slate-300">
-                              {teacher.bio}
-                            </p>
-                          )}
-                          {teacher.officeRoom && (
-                            <div className="mt-5 flex items-center gap-2 border-t border-white/10 pt-4 text-xs text-slate-400">
-                              <MapPin className="h-3.5 w-3.5 text-blue-400" />
-                              <span>{teacher.officeRoom}</span>
-                            </div>
-                          )}
-                        </div>
-                      </article>
-                    </HoverInfoBox>
-                  </RevealBlock>
-                ))}
-              </div>
-            )}
-          </section>
+          <div className="mt-6 mb-10">
+            <Team3DCarousel
+              title="OUR TEACHERS"
+              subtitle="Instructional Faculty &amp; Lab Mentors"
+              members={teachers.map((t) => ({
+                id: t.id,
+                name: t.name,
+                role: t.role,
+                photoUrl: t.photoUrl,
+                bio: t.bio,
+                department: t.department,
+                qualifications: t.qualifications,
+                officeRoom: t.officeRoom,
+              }))}
+            />
+          </div>
         )}
 
-        {/* Section 2: Community Members — Year-Based Gallery & 3D Two-Sided Viewer */}
+        {/* Main Committee / Executive Board 3D Coverflow Carousel Section */}
+        {(activeTab === 'all' || activeTab === 'members') && (
+          <div className="mt-6 mb-10">
+            <Team3DCarousel
+              title="MAIN COMMITTEE"
+              subtitle="Executive Board Officers &amp; Leadership"
+              members={mainCommitteeDirectory.map((m) => ({
+                id: m.id,
+                name: m.fullName,
+                role: m.position,
+                photoUrl: m.photoUrl,
+                secondaryPhotoUrl: m.secondaryPhotoUrl,
+                bio: m.bio,
+                year: m.year,
+                memberCode: m.memberCode,
+                isExecutive: m.isExecutive,
+                socialLinks: m.socialLinks,
+              }))}
+            />
+          </div>
+        )}
+
+        {/* Section 2: Two-Tier Committee Hierarchy */}
         {(activeTab === 'all' || activeTab === 'members') && (
           <section
             className={`${activeTab === 'all' ? 'mt-18 border-t border-white/10 pt-14' : 'mt-10'}`}
@@ -618,16 +570,16 @@ export function TeachersMembersPage({
             <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-violet-300">
-                  Interactive Yearly Community Archive
+                  Interactive Yearly Committee Archive
                 </p>
                 <h2
                   id="members-heading"
                   className="font-display mt-1 text-2xl font-bold text-white sm:text-3xl"
                 >
-                  Community Members
+                  Main Committee / Executive Board
                 </h2>
                 <p className="mt-1.5 text-sm text-slate-400">
-                  Select a cohort year below and click or tap any member card to reveal their second photograph and profile details.
+                  Select a cohort year below and click or tap any Executive Board card to reveal their second photograph and profile details.
                 </p>
               </div>
 
@@ -652,7 +604,7 @@ export function TeachersMembersPage({
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
-                  Executive ({executiveCount})
+                  Executive Board ({executiveCount})
                 </button>
                 <button
                   type="button"
@@ -663,7 +615,7 @@ export function TeachersMembersPage({
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
-                  General ({yearScopedMembers.length - executiveCount})
+                  Committee Members ({yearScopedMembers.length - executiveCount})
                 </button>
               </div>
             </div>
@@ -747,11 +699,51 @@ export function TeachersMembersPage({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -6 }}
                   transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-                  className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
+                  className="space-y-12"
                 >
-                  {filteredMembers.map((member) => (
-                    <DirectoryMemberCard key={member.id} member={member} />
-                  ))}
+                  {/* Tier 1: Main Committee / Executive Board — Full Detailed Cards */}
+                  {filteredMainCommittee.length > 0 && (
+                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                      {filteredMainCommittee.map((member) => (
+                        <DirectoryMemberCard key={member.id} member={member} />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Tier 2: Committee Members — Minimalist Multi-Column Plain-Names Grid */}
+                  {filteredCommitteeMembers.length > 0 && (
+                    <div
+                      aria-labelledby="committee-members-subheading"
+                      className={filteredMainCommittee.length > 0 ? 'border-t border-white/10 pt-10' : ''}
+                    >
+                      <div className="mb-5 flex items-baseline justify-between gap-4">
+                        <h3
+                          id="committee-members-subheading"
+                          className="font-display text-lg font-semibold tracking-tight text-white sm:text-xl"
+                        >
+                          Committee Members
+                        </h3>
+                        <span className="font-mono text-xs tabular-nums text-slate-400">
+                          {filteredCommitteeMembers.length}{' '}
+                          {filteredCommitteeMembers.length === 1 ? 'Member' : 'Members'}
+                        </span>
+                      </div>
+
+                      <ul
+                        aria-label="Committee Members"
+                        className="grid grid-cols-1 gap-x-8 gap-y-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+                      >
+                        {filteredCommitteeMembers.map((member) => (
+                          <li
+                            key={member.id}
+                            className="border-b border-white/[0.06] py-2 text-sm font-medium text-slate-200"
+                          >
+                            {member.fullName}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </motion.div>
               </AnimatePresence>
             )}
